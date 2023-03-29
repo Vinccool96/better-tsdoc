@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.7.20"
+    id("org.jetbrains.kotlin.jvm") version "1.8.0"
     id("org.jetbrains.intellij") version "1.13.2"
 }
 
@@ -18,6 +18,10 @@ intellij {
     type.set("IU") // Target IDE Platform
 
     plugins.set(listOf("JavaScript"))
+}
+
+dependencies {
+    testImplementation(kotlin("test"))
 }
 
 tasks { // Set the JVM compatibility versions
