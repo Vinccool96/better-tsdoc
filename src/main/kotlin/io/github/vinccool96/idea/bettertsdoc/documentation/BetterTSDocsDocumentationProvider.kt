@@ -1,9 +1,14 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
+import com.intellij.lang.javascript.JSTargetElementEvaluator
 import com.intellij.lang.javascript.psi.JSExpression
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptImportStatement
+import com.intellij.lang.javascript.psi.impl.JSReferenceExpressionImpl
+import com.intellij.lang.javascript.psi.jsdoc.JSDocTagValue
+import com.intellij.lang.javascript.psi.jsdoc.impl.JSDocReference
 import com.intellij.lang.javascript.psi.resolve.JSResolveResult
 import com.intellij.lang.javascript.psi.stubs.TypeScriptMergedTypeImplicitElement
+import com.intellij.lang.typescript.TypeScriptGoToDeclarationHandler
 import com.intellij.lang.typescript.documentation.TypeScriptDocumentationProvider
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
@@ -36,6 +41,11 @@ class BetterTSDocsDocumentationProvider : TypeScriptDocumentationProvider() {
 
         if (e is PsiComment) {
             return doGetCommentTextFromComment(e, originalElement)
+        }
+
+        val results = tryMultiResolveElement(e)
+        if (results.size > 1) {
+            return this.processMultiResolvedElements(e, originalElement, results)
         }
 
         val a = 1 + 2
@@ -119,11 +129,41 @@ class BetterTSDocsDocumentationProvider : TypeScriptDocumentationProvider() {
 
     companion object {
 
-        fun tryMultiResolveElement(_element: PsiElement?): Array<ResolveResult> {
-            if (_element is TypeScriptImportStatement) {
-                val elements = _element.findReferencedElements()
-                return elements.map { el -> JSResolveResult(el) }.toTypedArray()
+        fun tryMultiResolveElement(element: PsiElement?): Array<ResolveResult> {
+            when (element) {
+                is TypeScriptImportStatement -> {
+                    val elements = element.findReferencedElements()
+                    return elements.map { el -> JSResolveResult(el) }.toTypedArray()
+                }
+                is JSReferenceExpressionImpl -> {
+                    val elements =
+                            TypeScriptGoToDeclarationHandler.getResultsFromService(element.project, element, null)
+                    if (!elements.isNullOrEmpty()) {
+                        val filtered = elements.mapNotNull(
+                                TypeScriptDocumentationProvider::adjustResultFromServiceForDocumentation)
+
+                        if (filtered.isNotEmpty()) {
+                            return JSResolveResult.toResolveResults(filtered)
+                        }
+                    }
+
+                    return JSTargetElementEvaluator.resolveReferenceExpressionWithAllResolveResults(element)
+                }
+                is PsiPolyVariantReference -> {
+                    return element.multiResolve(false)
+                }
+                is JSDocTagValue -> {
+                    val references = element.getReferences()
+                    if (references.size == 1) {
+                        val reference = references[0]
+                        if (reference is JSDocReference) {
+                            return reference.multiResolve(false)
+                        }
+                    }
+                }
             }
+
+            return ResolveResult.EMPTY_ARRAY
         }
 
     }

@@ -25,7 +25,7 @@ function foo(n: number): number;
  * {@link foo:STR_ARG}
  * {@label STR_ARG}
  */
-function fo<caret>o(s: string): string;
+function foo<caret>(s: string): string;
 function foo(a?: string | number): number | string | void {
     if (a === undefined) {
         return
