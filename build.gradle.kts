@@ -1,7 +1,7 @@
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "1.8.0"
-    id("org.jetbrains.intellij") version "1.13.2"
+    id("org.jetbrains.intellij") version "1.13.3"
 }
 
 group = "io.github.vinccool96.idea"
@@ -14,7 +14,7 @@ repositories {
 // Configure Gradle IntelliJ Plugin
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
 intellij {
-    version.set("2022.1.4")
+    version.set("2023.1")
     type.set("IU") // Target IDE Platform
 
     plugins.set(listOf("JavaScript"))
@@ -34,8 +34,8 @@ tasks { // Set the JVM compatibility versions
     }
 
     patchPluginXml {
-        sinceBuild.set("221")
-        untilBuild.set("231.*")
+        sinceBuild.set("231")
+        untilBuild.set("241.*")
     }
 
     signPlugin {
@@ -46,5 +46,18 @@ tasks { // Set the JVM compatibility versions
 
     publishPlugin {
         token.set(System.getenv("PUBLISH_TOKEN"))
+    }
+
+    compileJava {
+        options.encoding = "UTF-8"
+    }
+
+    compileKotlin {
+        kotlinOptions {
+            jvmTarget = "17"
+            languageVersion = "1.7"
+            apiVersion = "1.7"
+            freeCompilerArgs = listOf("-Xjvm-default=all")
+        }
     }
 }

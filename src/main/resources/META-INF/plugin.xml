@@ -25,9 +25,6 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-        <fileType name="BetterTSDoc" language="TypeScript" fieldName="INSTANCE" extensions="ts;tsx"
-                  implementationClass="io.github.vinccool96.idea.bettertsdoc.BetterTSDocFileType"/>
-
         <lang.documentationProvider language="TypeScript" order="first"
                                     implementationClass="io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSDocsDocumentationProvider"/>
     </extensions>
