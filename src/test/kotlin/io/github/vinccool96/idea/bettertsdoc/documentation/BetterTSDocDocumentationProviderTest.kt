@@ -3,7 +3,7 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 import com.intellij.codeInsight.documentation.DocumentationManager
 import io.github.vinccool96.idea.bettertsdoc.BetterTSDocsTestCaseBase
 
-class BetterTSDocsDocumentationProviderTest : BetterTSDocsTestCaseBase() {
+class BetterTSDocDocumentationProviderTest : BetterTSDocsTestCaseBase() {
 
     fun testDocumentation() {
         myFixture.configureByFiles("DocumentationTestData.ts")

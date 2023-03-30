@@ -32,7 +32,7 @@ import com.intellij.psi.*
 import com.intellij.psi.css.impl.util.CssDocumentationProvider
 import java.util.function.Consumer
 
-class BetterTSDocsDocumentationProvider : TypeScriptDocumentationProvider() {
+class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
 
     override fun getQuickNavigateInfo(element: PsiElement?, originalElement: PsiElement?): String? {
         val res = super.getQuickNavigateInfo(element, originalElement)
