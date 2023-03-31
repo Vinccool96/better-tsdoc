@@ -3,6 +3,7 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 import com.intellij.lang.javascript.JSDocTokenTypes
 import com.intellij.lang.javascript.JSTargetElementEvaluator
 import com.intellij.lang.javascript.JSTokenTypes
+import com.intellij.lang.javascript.documentation.JSDocumentationBuilder
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptImportStatement
@@ -110,7 +111,7 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
 
                 val isTypeOnlyComment = elementType != null && elementType.isEquivalentTo(
                         JSDocumentationUtils.tryCreateTypeFromComment(docComment, true, true, false), null)
-                val builder = this.forwardingCreateDocumentationBuilder(element, originalElement)
+                val builder = this.createDocBuilder(element, originalElement)
                 if (!isTypeOnlyComment) {
                     JSDocumentationUtils.processDocumentationTextFromComment(docComment, docComment.node, builder)
                 }
@@ -118,7 +119,7 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
                 builder.fillEvaluatedType()
                 val parameterDoc = if (element is JSParameter) element else null
                 return if (parameterDoc != null) builder.getParameterDoc(parameterDoc, null, this,
-                        originalElement) else "" // TODO: replace "" with builder.getDoc()
+                        originalElement) else builder.getDoc()
             }
         }
 
@@ -134,9 +135,9 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
             return null
         }
 
-        val builder = this.createDocumentationBuilder(element, originalElement)
+        val builder = this.createDocBuilder(element, originalElement)
         builder.fillEvaluatedType()
-        return if (builder.showDoc()) "" else null // TODO: replace "" with builder.getDoc()
+        return if (builder.showDoc()) builder.getDoc() else null
     }
 
     override fun generateHoverDoc(element: PsiElement, originalElement: PsiElement?): String? {
@@ -214,6 +215,10 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
         return res
     }
 
+    fun createDocBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocDocumentationBuilder {
+        return BetterTSDocDocumentationBuilder(element, contextElement, this)
+    }
+
     private fun getPossibleMeaningfulElement(element: PsiElement): PsiElement {
         if (element is JSFunction && element.isConstructor) {
             val containingClass = JSUtils.getMemberContainingClass(element)
@@ -227,14 +232,14 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
     }
 
     private fun getDocumentationForImplicitElement(element: JSImplicitElement): String? {
-        val builder = this.forwardingCreateDocumentationBuilder(element, element)
+        val builder = this.createDocBuilder(element, element)
         val comment = JSDocumentationUtils.findCommentForImplicitElement(element)
         if (comment != null) {
             JSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
         }
 
         builder.fillEvaluatedType()
-        return "" // TODO: replace "" with builder.getDoc()
+        return builder.getDoc()
     }
 
     private fun findTargetElement(psiElement: PsiElement, element: PsiElement): PsiElement {
@@ -312,7 +317,8 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
     private fun getTypeofResolvedElement(docComment: PsiComment, type: JSType?): PsiElement? {
         if (type is JSNamedType && type.jsContext == JSContext.STATIC) {
             if (docComment is JSDocComment && docComment.tags.size == 1 && docComment.node.findChildByType(
-                            JSDocTokenTypes.DOC_COMMENT_DATA) == null) {
+                        JSDocTokenTypes.DOC_COMMENT_DATA) == null
+            ) {
                 val value = docComment.tags[0].value ?: return null
                 val reference = value.reference
                 return if (reference is JSDocReference?) reference?.resolve() else null
@@ -355,9 +361,10 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
                     val elements = element.findReferencedElements()
                     return elements.map { el -> JSResolveResult(el) }.toTypedArray()
                 }
+
                 is JSReferenceExpressionImpl -> {
                     val elements =
-                            TypeScriptGoToDeclarationHandler.getResultsFromService(element.project, element, null)
+                        TypeScriptGoToDeclarationHandler.getResultsFromService(element.project, element, null)
                     if (!elements.isNullOrEmpty()) {
                         val filtered = elements.mapNotNull(
                                 TypeScriptDocumentationProvider::adjustResultFromServiceForDocumentation)
@@ -369,9 +376,11 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
 
                     return JSTargetElementEvaluator.resolveReferenceExpressionWithAllResolveResults(element)
                 }
+
                 is PsiPolyVariantReference -> {
                     return element.multiResolve(false)
                 }
+
                 is JSDocTagValue -> {
                     val references = element.getReferences()
                     if (references.size == 1) {
