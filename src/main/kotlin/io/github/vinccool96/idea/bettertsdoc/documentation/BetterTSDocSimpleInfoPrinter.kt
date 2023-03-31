@@ -1,7 +1,9 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
-import com.intellij.lang.javascript.documentation.*
+import com.intellij.lang.javascript.documentation.JSDocumentationProvider
+import com.intellij.lang.javascript.documentation.JSDocumentationUtils
+import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.lang.javascript.index.JSItemPresentation
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
@@ -17,7 +19,6 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.ui.ColorUtil
 import com.intellij.ui.JBColor
-import com.intellij.util.ProcessingContext
 import com.intellij.util.containers.ContainerUtil
 import org.jetbrains.annotations.Nls
 import java.util.function.Consumer
@@ -47,7 +48,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
     }
 
     @Nls
-    fun getRenderedDoc(provider: JSDocumentationProvider): String {
+    fun getRenderedDoc(provider: BetterTSDocumentationProvider): String? {
         val result = StringBuilder()
         if (!this.appendMdnDoc(result, false)) {
             this.appendDescriptionsAndSections(result, provider, false)
@@ -56,7 +57,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
         return result.toString()
     }
 
-    private fun appendDescriptionsAndSections(result: StringBuilder, provider: JSDocumentationProvider,
+    private fun appendDescriptionsAndSections(result: StringBuilder, provider: BetterTSDocumentationProvider,
             hasDefinition: Boolean) {
         appendDescriptionContent(this, result)
         result.append("<table class='sections'>")
@@ -79,7 +80,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
         }
     }
 
-    protected fun appendInnerSections(result: StringBuilder, provider: JSDocumentationProvider,
+    protected open fun appendInnerSections(result: StringBuilder, provider: BetterTSDocumentationProvider,
             hasDefinition: Boolean) {
         this.appendBodyDoc(result, hasDefinition)
         addSections(myBuilder.myUnknownTags, result)
@@ -174,12 +175,12 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
             } else {
                 BetterTSDocumentationBuilder.getNameForDocumentation(namedItem)
             }
-            var text: String
+            var text: String?
             if (namedItem !is JSAttributeNameValuePair && namedItem !is JSImplicitElement && namedItem !is JSDefinitionExpression && !DialectDetector.isActionScript(
                             namedItem)) {
                 val builder = provider.getQuickNavigateBuilder()
                 val element = contextElement ?: namedItem
-                text = builder.getQuickNavigateInfoForNavigationElement(namedItem, element, true)!!
+                text = builder.getQuickNavigateInfoForNavigationElement(namedItem, element, true)
                 if (text == null) {
                     text = StringUtil.notNullize(name)
                 }
@@ -212,10 +213,10 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
         fun getLocationWithEllipsis(filePath: String, maxLength: Int): String {
             val fileName = VfsUtil.extractFileName(filePath) ?: return filePath
 
-            if (fileName.length + 4 >= maxLength) {
-                return fileName
+            return if (fileName.length + 4 >= maxLength) {
+                fileName
             } else if (maxLength >= filePath.length) {
-                return filePath
+                filePath
             } else {
                 val acceptableSymbolCount = maxLength - fileName.length - 4
                 var leftPartEnd = filePath.indexOf("/")
@@ -225,18 +226,18 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
 
                 val startPartSymbolCount = leftPartEnd + 1
                 if (startPartSymbolCount > acceptableSymbolCount) {
-                    return fileName
+                    fileName
                 } else {
                     val lastIndex = filePath.lastIndexOf("/")
                     if (leftPartEnd >= lastIndex) {
-                        return fileName
+                        fileName
                     } else {
                         val result = StringBuilder()
                         result.append(filePath, 0, leftPartEnd + 1).append(".../")
                         appendMaxRightPath(filePath.substring(leftPartEnd + 1, lastIndex + 1), result,
                                 acceptableSymbolCount - startPartSymbolCount)
                         result.append(fileName)
-                        return result.toString()
+                        result.toString()
                     }
                 }
             }

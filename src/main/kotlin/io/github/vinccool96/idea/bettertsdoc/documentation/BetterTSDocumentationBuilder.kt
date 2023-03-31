@@ -1,17 +1,29 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
+import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.documentation.*
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor.MetaDocType
 import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
+import com.intellij.lang.javascript.formatter.JSCodeStyleSettings
+import com.intellij.lang.javascript.index.JSSymbolUtil
 import com.intellij.lang.javascript.psi.*
+import com.intellij.lang.javascript.psi.ecma6.JSComputedPropertyNameOwner
 import com.intellij.lang.javascript.psi.ecmal4.JSClass
 import com.intellij.lang.javascript.psi.impl.JSPsiImplUtils
+import com.intellij.lang.javascript.psi.jsdoc.JSDocComment
 import com.intellij.lang.javascript.psi.jsdoc.impl.JSDocCommentImpl
 import com.intellij.lang.javascript.psi.resolve.JSInheritanceUtil
+import com.intellij.lang.javascript.psi.resolve.JSResolveUtil
 import com.intellij.lang.javascript.psi.stubs.JSImplicitElement
+import com.intellij.lang.javascript.psi.types.JSAnyType
+import com.intellij.lang.javascript.psi.types.JSGenericParameterType
 import com.intellij.lang.javascript.psi.types.JSTypeParser
 import com.intellij.lang.javascript.psi.types.JSTypeSourceFactory
+import com.intellij.lang.javascript.psi.types.evaluable.JSEvaluableOnlyType
+import com.intellij.lang.javascript.psi.util.JSDestructuringContext
+import com.intellij.lang.javascript.psi.util.JSDestructuringUtil
+import com.intellij.lang.javascript.psi.util.JSUtils
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
@@ -29,7 +41,7 @@ import java.util.regex.Pattern
 import kotlin.collections.set
 
 class BetterTSDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
-        private val myProvider: JSDocumentationProvider?) : JSDocumentationProcessor {
+        private val myProvider: BetterTSDocumentationProvider) : JSDocumentationProcessor {
 
     private val myTargetInfo = BetterTSDocMethodInfoBuilder()
 
@@ -173,7 +185,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         return if (metaDocType == MetaDocType.PREVIOUS_IS_DEFAULT && remainingLineContent != null) {
             color = remainingLineContent.startsWith("0x") && remainingLineContent.length == 8
             content = remainingLineContent.substring(if (color) 2 else 0)
-            val parameterInfo = this.getFieldInfo(matchName)
+            val parameterInfo = this.getFieldInfo(matchName!!)
             if (parameterInfo != null) {
                 parameterInfo.initialValue = content
             } else if (currentParameterInfo != null) {
@@ -202,15 +214,15 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             updateInfoForNewLines(exampleInfo)
             true
         } else if (SIMPLE_TAGS.containsKey(metaDocType)) {
-            myTargetInfo.addSimpleTag(SIMPLE_TAGS[metaDocType] as String?, remainingLineContent)
+            myTargetInfo.addSimpleTag(SIMPLE_TAGS[metaDocType]!!, remainingLineContent)
             true
         } else if (metaDocType == MetaDocType.PREVIOUS_IS_OPTIONAL) {
             var parameterInfo: BetterTSDocParameterInfoBuilder? = null
             if (myTargetInfo.myProperties != null && matchName != null) {
-                parameterInfo = myTargetInfo.myProperties.get(JSQualifiedNameImpl.fromQualifiedName(matchName))
+                parameterInfo = myTargetInfo.myProperties!![JSQualifiedNameImpl.fromQualifiedName(matchName)]
             }
             if (parameterInfo == null) {
-                parameterInfo = this.getFieldInfo(matchName)
+                parameterInfo = this.getFieldInfo(matchName!!)
             }
             if (remainingLineContent != null) {
                 onCommentLine(remainingLineContent)
@@ -255,7 +267,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                         if (matchName != null && !matchesElement) {
                             val qualifiedName = JSQualifiedNameImpl.fromQualifiedName(matchName)
                             if (myTargetInfo.myProperties == null) {
-                                myTargetInfo.myProperties = LinkedHashMap<Any?, Any?>()
+                                myTargetInfo.myProperties = LinkedHashMap()
                             }
                             parameterInfo = BetterTSDocParameterInfoBuilder()
                             if (matchValue != null) {
@@ -266,7 +278,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                                 parameterInfo.namespace = qualifiedName.parent!!.qualifiedName
                             }
                             parameterInfo.appendDescription(remainingLineContent)
-                            myTargetInfo.myProperties.put(qualifiedName, parameterInfo)
+                            myTargetInfo.myProperties!![qualifiedName] = parameterInfo
                             updateInfoForNewLines(parameterInfo)
                         }
                     } else if (metaDocType == MetaDocType.TYPEDEF) {
@@ -289,7 +301,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                                     }
                                     fieldName = getFieldName(matchName)
                                     if (fieldName != null) {
-                                        parameterInfo = JSDocParameterInfoBuilder()
+                                        parameterInfo = BetterTSDocParameterInfoBuilder()
                                         val parameterType =
                                                 JSTypeParser.createParameterType(myElement.project, matchValue,
                                                         typeSource)
@@ -309,11 +321,11 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                                         addReturnTypeInfoFromComments = true
                                         if (function is JSFunction) {
                                             val holder = DialectDetector.dialectOfElement(function)
-                                            lateinit var typeFromCommentsFunction: JSType
-                                            if (holder != null && (holder.isTypeScript || holder.isECMA4) && JSPsiImplUtils.getTypeFromDeclaration(
-                                                            function).also {
-                                                        typeFromCommentsFunction = it!!
-                                                    } != null && typeFromCommentsFunction.typeText != matchValue) {
+                                            var typeFromCommentsFunction: JSType? = null
+                                            if (holder != null && (holder.isTypeScript || holder.isECMA4)
+                                                    && JSPsiImplUtils.getTypeFromDeclaration(function).also {
+                                                        typeFromCommentsFunction = it
+                                                    } != null && typeFromCommentsFunction!!.typeText != matchValue) {
                                                 addReturnTypeInfoFromComments = false
                                             }
                                         }
@@ -498,8 +510,8 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         return if (newResult.isNotEmpty()) newResult.toString() else null
     }
 
-    private fun createPrinter(isForProperty: Boolean): BetterTSDocSimpleInfoPrinter<*> {
-        var target = myTargetInfo
+    private fun createPrinter(isForProperty: Boolean): BetterTSDocSimpleInfoPrinter<out BetterTSDocBuilderSimpleInfo> {
+        var target: BetterTSDocBuilderSimpleInfo = myTargetInfo
         if (isForProperty && myElement is JSElementBase) {
             val propertyTarget = this.findMostSuitablePropertyOrParameterProperty()
             if (propertyTarget != null) {
@@ -507,12 +519,145 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             }
         }
 
-        return if (function != null && target is BetterTSDocMethodInfoBuilder?) {
-            BetterTSDocMethodInfoPrinter(target!!, function, myElement, myContextElement)
-        } else if (target is BetterTSDocSymbolInfoBuilder?) {
+        return if (function != null && target is BetterTSDocMethodInfoBuilder) {
+            BetterTSDocMethodInfoPrinter(target, function, myElement, myContextElement)
+        } else if (target is BetterTSDocSymbolInfoBuilder) {
             BetterTSDocSymbolInfoPrinter(target, myElement, myContextElement, true)
         } else {
             BetterTSDocSimpleInfoPrinter(target, myElement, myContextElement, true)
+        }
+    }
+
+    private fun findMostSuitablePropertyOrParameterProperty(): BetterTSDocBuilderSimpleInfo? {
+        val properties = myTargetInfo.myProperties
+        var propertyName = JSQualifiedNameImpl.fromQualifiedNamedElement(
+                (myElement as JSElementBase))
+        while (propertyName != null) {
+            if (properties != null) {
+                val propertyInfo = properties[propertyName]
+                if (propertyInfo != null) {
+                    return propertyInfo
+                }
+            }
+            val var7 = myTargetInfo.parameterInfoMap.entries.iterator()
+            while (var7.hasNext()) {
+                val (_, value) = var7.next()
+                val optionsMap = value.optionsMap
+                if (optionsMap != null) {
+                    val parameterProperty = optionsMap[propertyName.qualifiedName]
+                    if (parameterProperty != null) {
+                        return parameterProperty
+                    }
+                }
+            }
+            propertyName = propertyName.withoutInnermostComponent(null)
+        }
+        return null
+    }
+
+    @get:Nls
+    val renderedDoc: String?
+        get() {
+            var description = createPrinter(false).getRenderedDoc(myProvider)
+            return if (description == null) {
+                null
+            } else {
+                description = StringUtil.trimEnd(description, "<table class='sections'></table>")
+                description.ifEmpty { null }
+            }
+        }
+
+    fun getParameterDoc(parameter: JSParameter, docComment: PsiElement?, provider: JSDocumentationProvider,
+            place: PsiElement?): @Nls String? {
+        return if (function == null) {
+            null
+        } else {
+            val name = parameter.name!!
+            val methodInfo = myTargetInfo
+            var parameterInfo = methodInfo.parameterInfoMap[name]
+            if (parameterInfo == null && docComment is JSDocComment && function is JSFunction && JSDestructuringUtil.isDestructuring(
+                            parameter.parent)) {
+                Objects.requireNonNull(JSDestructuringParameter::class.java)
+                val destructuringContext = JSDestructuringContext.findDestructuringParents(parameter.parent) { obj ->
+                    JSDestructuringParameter::class.java.isInstance(obj)
+                }
+                if (destructuringContext.outerElement != null) {
+                    val fieldName = destructuringContext.buildFieldName()
+                    var containerInfo = methodInfo.parameterInfoMap[fieldName]
+                    if (containerInfo == null) {
+                        val destructuringParameter = destructuringContext.outerElement as JSDestructuringParameter
+                        val parameterIndex = JSContextTypeEvaluator.getParameterIndex(destructuringParameter)
+                        val topLevelParameters = ArrayList(methodInfo.parameterInfoMap.values)
+                        if (parameterIndex >= 0 && parameterIndex < topLevelParameters.size) {
+                            containerInfo = topLevelParameters[parameterIndex]
+                        }
+                    }
+                    if (containerInfo != null && fieldName != null) {
+                        val fieldInfo = containerInfo.optionsMap?.get(fieldName)
+                        if (fieldInfo != null) {
+                            return this.buildParameterInfo(name, parameter, fieldInfo, provider, place)
+                        }
+                    }
+                }
+            }
+            if (parameterInfo == null) {
+                parameterInfo = BetterTSDocParameterInfoBuilder()
+            }
+            this.buildParameterInfo(name, parameter, parameterInfo, provider, place)
+        }
+    }
+
+    @Nls
+    private fun buildParameterInfo(name: String?, parameter: JSParameter,
+            parameterInfo: BetterTSDocParameterInfoBuilder,
+            provider: JSDocumentationProvider, place: PsiElement?): String {
+        val newResult = StringBuilder()
+        val printer = BetterTSDocParameterInfoPrinter(parameter, parameterInfo)
+        printer.appendDoc(name, myTargetInfo, newResult, provider, place)
+        return newResult.toString()
+    }
+
+    fun fillEvaluatedType() {
+        if (myElement !is JSClass && myTargetInfo.jsType == null) {
+            myTargetInfo.jsType = calculateEvaluatedType()
+        }
+    }
+
+    fun showDoc(): Boolean {
+        return if (!DialectDetector.isActionScript(myElement)) {
+            true
+        } else {
+            myElement is JSClass || myTargetInfo.jsType != null
+        }
+    }
+
+    private fun calculateEvaluatedType(): JSType? {
+        val contextElement = myContextElement
+        if (contextElement != null) {
+            val parent = contextElement.parent
+            if (parent is JSReferenceExpression) {
+                val typeForDoc = JSShowTypeInfoAction.getTypeForDocumentation(parent)
+                if (typeForDoc != null && !JSTypeUtils.isAnyType(typeForDoc)) {
+                    return typeForDoc
+                }
+            }
+        }
+        val declaredType = JSTypeUtils.getTypeOfElement(myElement)
+        return if (declaredType != null && !JSTypeUtils.hasTypes(declaredType, JSEvaluableOnlyType::class.java)
+                && !JSTypeUtils.hasTypes(declaredType, JSGenericParameterType::class.java)) {
+            declaredType
+        } else {
+            val expressionForTypeEvaluation = JSPsiImplUtils.getAssignedExpression(myElement)
+            if (expressionForTypeEvaluation != null && expressionForTypeEvaluation !is JSFunctionExpression) {
+                var type = JSResolveUtil.getExpressionJSType(expressionForTypeEvaluation)
+                if (type != null && type !is JSAnyType) {
+                    if (type.isSourceStrict) {
+                        type = JSTypeUtils.copyWithStrictRecursive(type, false)
+                    }
+                    return type
+                }
+            }
+            if (expressionForTypeEvaluation == null) JSShowTypeInfoAction.getTypeForDocumentation(myElement) else null
         }
     }
 
@@ -563,6 +708,30 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
 
         private fun replaceBrTagsWithNewLines(line: String): String {
             return ourBrTagPattern.matcher(line).replaceAll(NEW_LINE_MARKDOWN_PLACEHOLDER)
+        }
+
+        fun getNameForDocumentation(element: JSPsiNamedElementBase): String {
+            var name = element.name
+            return if (name != null) {
+                val quote = JSCodeStyleSettings.getQuoteChar(element)
+                name = JSSymbolUtil.quoteIfSpecialPropertyName(name, JSUtils.isPrivateSharpItem(element), quote)
+                name = ensureBracketsForQuotedName(name, quote)
+                name
+            } else if (element is JSComputedPropertyNameOwner) {
+                val computedName = (element as JSComputedPropertyNameOwner).computedPropertyName
+                val expressionAsReferenceName = computedName?.expressionAsReferenceName
+                if (expressionAsReferenceName != null) "[$expressionAsReferenceName]" else "[<computed>]"
+            } else {
+                "<unknown>"
+            }
+        }
+
+        fun ensureBracketsForQuotedName(name: String, quote: Char): String {
+            return if (name[0] == quote) {
+                "[$name]"
+            } else {
+                name
+            }
         }
 
     }

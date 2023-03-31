@@ -14,7 +14,7 @@ class BetterTSDocParameterInfoBuilder : BetterTSDocBuilderSimpleInfo() {
 
     var docName: String? = null
 
-    var optionsMap: Map<String, BetterTSDocParameterInfoBuilder>? = null
+    var optionsMap: MutableMap<String, BetterTSDocParameterInfoBuilder>? = null
 
     fun updateFromDecorator(decorator: JSParameterTypeDecorator) {
         jsType = decorator.simpleType

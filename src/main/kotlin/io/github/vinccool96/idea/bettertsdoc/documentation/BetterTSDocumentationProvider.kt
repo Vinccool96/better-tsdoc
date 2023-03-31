@@ -1,12 +1,23 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
+import com.intellij.lang.documentation.CodeDocumentationProvider
+import com.intellij.lang.documentation.ExternalDocumentationProvider
+import com.intellij.lang.ecmascript6.psi.ES6ImportExportSpecifierAlias
+import com.intellij.lang.ecmascript6.psi.ES6ImportedExportedDefaultBinding
 import com.intellij.lang.javascript.JSDocTokenTypes
 import com.intellij.lang.javascript.JSTargetElementEvaluator
 import com.intellij.lang.javascript.JSTokenTypes
+import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
+import com.intellij.lang.javascript.documentation.JSQuickNavigateBuilder
 import com.intellij.lang.javascript.psi.*
+import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
+import com.intellij.lang.javascript.psi.ecma6.TypeScriptFunction
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptImportStatement
+import com.intellij.lang.javascript.psi.ecmal4.JSAttributeList
+import com.intellij.lang.javascript.psi.ecmal4.JSAttributeListOwner
 import com.intellij.lang.javascript.psi.ecmal4.JSAttributeNameValuePair
+import com.intellij.lang.javascript.psi.ecmal4.JSQualifiedNamedElement
 import com.intellij.lang.javascript.psi.impl.JSReferenceExpressionImpl
 import com.intellij.lang.javascript.psi.jsdoc.JSDocComment
 import com.intellij.lang.javascript.psi.jsdoc.JSDocTagValue
@@ -16,36 +27,123 @@ import com.intellij.lang.javascript.psi.resolve.JSResolveResult
 import com.intellij.lang.javascript.psi.stubs.JSImplicitElement
 import com.intellij.lang.javascript.psi.stubs.TypeScriptMergedTypeImplicitElement
 import com.intellij.lang.javascript.psi.stubs.TypeScriptProxyImplicitElement
+import com.intellij.lang.javascript.psi.types.JSAnyType
+import com.intellij.lang.javascript.psi.types.JSCompositeTypeImpl
 import com.intellij.lang.javascript.psi.types.JSContext
 import com.intellij.lang.javascript.psi.types.JSNamedType
 import com.intellij.lang.javascript.psi.util.JSStubBasedPsiTreeUtil
 import com.intellij.lang.javascript.psi.util.JSUtils
+import com.intellij.lang.javascript.types.TypeFromUsageDetector
 import com.intellij.lang.typescript.TypeScriptGoToDeclarationHandler
 import com.intellij.lang.typescript.documentation.TypeScriptDocumentationProvider
-import com.intellij.openapi.editor.Editor
+import com.intellij.lang.typescript.formatter.TypeScriptCodeStyleSettings
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Pair
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.Ref
-import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
 import com.intellij.psi.css.impl.util.CssDocumentationProvider
-import java.util.function.Consumer
+import org.jetbrains.annotations.Nls
 
-class BetterTSDocumentationProvider : TypeScriptDocumentationProvider() {
+class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumentationProvider {
 
-    override fun getQuickNavigateInfo(element: PsiElement?, originalElement: PsiElement?): String? {
-        val res = super.getQuickNavigateInfo(element, originalElement)
-        return res
+    fun appendParameterDoc(builder: StringBuilder, parameter: JSParameter) {
+        val settings = TypeScriptCodeStyleSettings.getTypeScriptSettings(parameter)
+        if (!DumbService.isDumb(parameter.project)) {
+            val type = JSShowTypeInfoAction.getTypeForDocumentation(parameter)
+            if (type != null && type !is JSAnyType && settings.JSDOC_INCLUDE_TYPES) {
+                builder.append("* ")
+                builder.append("@param ")
+                builder.append("{")
+                builder.append(getTypeTextForGenerateDoc(type))
+                builder.append("} ")
+                builder.append(parameter.name)
+                return
+            }
+        }
+
+        builder.append("* @param ").append(parameter.name)
     }
 
-    override fun getUrlFor(element: PsiElement?, originalElement: PsiElement?): MutableList<String>? {
-        val res = super.getUrlFor(element, originalElement)
-        return res
+    fun getFunctionReturnTypeForInfoDoc(function: JSFunction): JSType? {
+        return if (!TypeScriptCodeStyleSettings.getTypeScriptSettings(function).JSDOC_INCLUDE_TYPES) {
+            null
+        } else if (function is TypeScriptFunction && function.returnTypeElement != null) {
+            function.getReturnType()
+        } else {
+            TypeFromUsageDetector.detectTypeFromUsage(function)
+        }
+    }
+
+    fun getEffectiveElement(_element: PsiElement, originalElement: PsiElement?): PsiElement? {
+        if (_element is JSReferenceExpression && originalElement != null) {
+            val elements =
+                    TypeScriptGoToDeclarationHandler.getResultsFromService(_element.project, originalElement, null)
+            if (!elements.isNullOrEmpty()) {
+                val element = adjustResultFromServiceForDocumentation(elements[0])
+                if (element != null) {
+                    return element
+                }
+            }
+        }
+
+        var resolve: PsiElement?
+        if (_element is JSExpression && _element !is JSQualifiedNamedElement) {
+            val candidate = JSQuickNavigateBuilder.getOriginalElementOrParentIfLeaf(originalElement)
+            resolve = candidate
+            if (candidate is JSReferenceExpression) {
+                resolve = candidate.resolve()
+            }
+            if (resolve is ES6ImportedExportedDefaultBinding) {
+                return resolve
+            }
+        }
+
+        if (_element is ES6ImportExportSpecifierAlias) {
+            val element = _element.findSpecifierElement()
+            if (element != null) {
+                resolve = element.resolve()
+                return (resolve ?: element)
+            }
+        }
+
+        return _element
+    }
+
+    fun getTypeTextForGenerateDoc(rawType: JSType): String {
+        val realRawType = JSTypeUtils.applyCompositeMapping(rawType) { el: JSType? ->
+            JSCompositeTypeImpl.optimizeTypeIfComposite(el)
+        }!!
+        val builder = JSDocTextStringBuilder()
+        realRawType.buildTypeText(TypeTextFormat.CODE, builder)
+        return builder.result
+    }
+
+    override fun fetchExternalDocumentation(project: Project?, element: PsiElement?, docUrls: List<String?>?,
+            onHover: Boolean): @Nls String? {
+        return null
+    }
+
+    fun shouldAddTypeAnnotation(context: PsiElement?): Boolean {
+        return if (context == null) {
+            false
+        } else {
+            val settings = TypeScriptCodeStyleSettings.getTypeScriptSettings(context)
+            settings.JSDOC_INCLUDE_TYPES
+        }
+    }
+
+    fun getDeclarationAccessModifier(name: String?,
+            attributeListOwner: JSAttributeListOwner?): JSAttributeList.AccessType? {
+        return if (attributeListOwner == null) {
+            null
+        } else {
+            val attributeList = attributeListOwner.attributeList
+            attributeList?.accessType
+        }
     }
 
     override fun generateDoc(psiElement: PsiElement?, originalElement: PsiElement?): String? {
-        val res = super.generateDoc(psiElement, originalElement)
         if (psiElement == null || (psiElement is TypeScriptMergedTypeImplicitElement && originalElement != null && originalElement.context is JSExpression)) {
             return null
         }
@@ -137,81 +235,6 @@ class BetterTSDocumentationProvider : TypeScriptDocumentationProvider() {
         val builder = this.createDocBuilder(element, originalElement)
         builder.fillEvaluatedType()
         return if (builder.showDoc()) builder.getDoc() else null
-    }
-
-    override fun generateHoverDoc(element: PsiElement, originalElement: PsiElement?): String? {
-        val res = super.generateHoverDoc(element, originalElement)
-        return res
-    }
-
-    override fun generateRenderedDoc(comment: PsiDocCommentBase): String? {
-        val res = super.generateRenderedDoc(comment)
-        return res
-    }
-
-    override fun collectDocComments(file: PsiFile, sink: Consumer<in PsiDocCommentBase>) {
-        super.collectDocComments(file, sink)
-        val a = 1 + 2
-    }
-
-    override fun findDocComment(file: PsiFile, range: TextRange): PsiDocCommentBase? {
-        val res = super.findDocComment(file, range)
-        return res
-    }
-
-    override fun getDocumentationElementForLookupItem(psiManager: PsiManager?, `object`: Any?,
-            element: PsiElement?): PsiElement? {
-        val res = super.getDocumentationElementForLookupItem(psiManager, `object`, element)
-        return res
-    }
-
-    override fun getDocumentationElementForLink(psiManager: PsiManager, link: String,
-            context: PsiElement?): PsiElement? {
-        val res = super.getDocumentationElementForLink(psiManager, link, context)
-        return res
-    }
-
-    override fun getCustomDocumentationElement(editor: Editor, file: PsiFile, contextElement: PsiElement?,
-            targetOffset: Int): PsiElement? {
-        val res = super.getCustomDocumentationElement(editor, file, contextElement, targetOffset)
-        return res
-    }
-
-    override fun findExistingDocComment(contextElement: PsiComment?): PsiComment? {
-        val res = super.findExistingDocComment(contextElement)
-        return res
-    }
-
-    override fun parseContext(startPoint: PsiElement): Pair<PsiElement, PsiComment>? {
-        val res = super.parseContext(startPoint)
-        return res
-    }
-
-    override fun generateDocumentationContentStub(contextComment: PsiComment?): String? {
-        val res = super.generateDocumentationContentStub(contextComment)
-        return res
-    }
-
-    override fun fetchExternalDocumentation(project: Project?, element: PsiElement?, docUrls: MutableList<String>?,
-            onHover: Boolean): String? {
-        val res = super.fetchExternalDocumentation(project, element, docUrls, onHover)
-        return res
-    }
-
-    override fun canPromptToConfigureDocumentation(element: PsiElement?): Boolean {
-        val res = super.canPromptToConfigureDocumentation(element)
-        return res
-    }
-
-    override fun promptToConfigureDocumentation(element: PsiElement?) {
-        super.promptToConfigureDocumentation(element)
-        val a = 1 + 2
-    }
-
-    override fun processMultiResolvedElements(_element: PsiElement, originalElement: PsiElement?,
-            results: Array<out ResolveResult>): String? {
-        val res = super.processMultiResolvedElements(_element, originalElement, results)
-        return res
     }
 
     fun createDocBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocumentationBuilder {
@@ -316,7 +339,7 @@ class BetterTSDocumentationProvider : TypeScriptDocumentationProvider() {
     private fun getTypeofResolvedElement(docComment: PsiComment, type: JSType?): PsiElement? {
         if (type is JSNamedType && type.jsContext == JSContext.STATIC) {
             if (docComment is JSDocComment && docComment.tags.size == 1 && docComment.node.findChildByType(
-                        JSDocTokenTypes.DOC_COMMENT_DATA) == null
+                            JSDocTokenTypes.DOC_COMMENT_DATA) == null
             ) {
                 val value = docComment.tags[0].value ?: return null
                 val reference = value.reference
@@ -354,6 +377,18 @@ class BetterTSDocumentationProvider : TypeScriptDocumentationProvider() {
 
     companion object {
 
+        const val DEFAULT_CLASS_NAME = "default"
+
+        @NlsSafe
+        const val OBJECT_NAME = "Object"
+
+        private const val RETURN_TAG_PROPERTY = "javascript.return.tag"
+
+        const val SEE_PLAIN_TEXT_CHARS = "\t \"-\\/<>*"
+
+        @NlsSafe
+        private const val P_TAG = "<p>"
+
         fun tryMultiResolveElement(element: PsiElement?): Array<ResolveResult> {
             when (element) {
                 is TypeScriptImportStatement -> {
@@ -363,7 +398,7 @@ class BetterTSDocumentationProvider : TypeScriptDocumentationProvider() {
 
                 is JSReferenceExpressionImpl -> {
                     val elements =
-                        TypeScriptGoToDeclarationHandler.getResultsFromService(element.project, element, null)
+                            TypeScriptGoToDeclarationHandler.getResultsFromService(element.project, element, null)
                     if (!elements.isNullOrEmpty()) {
                         val filtered = elements.mapNotNull(
                                 TypeScriptDocumentationProvider::adjustResultFromServiceForDocumentation)
