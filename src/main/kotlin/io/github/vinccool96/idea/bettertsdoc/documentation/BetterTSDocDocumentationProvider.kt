@@ -3,7 +3,6 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 import com.intellij.lang.javascript.JSDocTokenTypes
 import com.intellij.lang.javascript.JSTargetElementEvaluator
 import com.intellij.lang.javascript.JSTokenTypes
-import com.intellij.lang.javascript.documentation.JSDocumentationBuilder
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptImportStatement
@@ -215,8 +214,8 @@ class BetterTSDocDocumentationProvider : TypeScriptDocumentationProvider() {
         return res
     }
 
-    fun createDocBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocDocumentationBuilder {
-        return BetterTSDocDocumentationBuilder(element, contextElement, this)
+    fun createDocBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocumentationBuilder {
+        return BetterTSDocumentationBuilder(element, contextElement, this)
     }
 
     private fun getPossibleMeaningfulElement(element: PsiElement): PsiElement {

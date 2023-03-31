@@ -13,7 +13,7 @@ import com.intellij.psi.PsiNamedElement
 import java.util.*
 import java.util.regex.Pattern
 
-class BetterTSDocDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
+class BetterTSDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
         private val myProvider: JSDocumentationProvider?) : JSDocumentationProcessor {
 
     private val myTargetInfo = JSDocMethodInfoBuilder()
