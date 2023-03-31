@@ -26,6 +26,6 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
         <lang.documentationProvider language="TypeScript" order="first"
-                                    implementationClass="io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSDocDocumentationProvider"/>
+                                    implementationClass="io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSDocumentationProvider"/>
     </extensions>
 </idea-plugin>
