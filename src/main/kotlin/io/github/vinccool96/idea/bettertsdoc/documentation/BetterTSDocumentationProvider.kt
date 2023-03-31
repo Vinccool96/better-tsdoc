@@ -1,29 +1,32 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
+import com.intellij.codeInsight.documentation.QuickDocUtil
+import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.lang.documentation.CodeDocumentationProvider
+import com.intellij.lang.documentation.CompositeDocumentationProvider
 import com.intellij.lang.documentation.ExternalDocumentationProvider
 import com.intellij.lang.ecmascript6.psi.ES6ImportExportSpecifierAlias
 import com.intellij.lang.ecmascript6.psi.ES6ImportedExportedDefaultBinding
-import com.intellij.lang.javascript.JSDocTokenTypes
-import com.intellij.lang.javascript.JSTargetElementEvaluator
-import com.intellij.lang.javascript.JSTokenTypes
+import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.documentation.JSQuickNavigateBuilder
+import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
+import com.intellij.lang.javascript.library.JSLibraryExtDocProviderFactory
+import com.intellij.lang.javascript.library.JSLibraryManager
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptFunction
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptImportStatement
-import com.intellij.lang.javascript.psi.ecmal4.JSAttributeList
-import com.intellij.lang.javascript.psi.ecmal4.JSAttributeListOwner
-import com.intellij.lang.javascript.psi.ecmal4.JSAttributeNameValuePair
-import com.intellij.lang.javascript.psi.ecmal4.JSQualifiedNamedElement
+import com.intellij.lang.javascript.psi.ecmal4.*
 import com.intellij.lang.javascript.psi.impl.JSReferenceExpressionImpl
 import com.intellij.lang.javascript.psi.jsdoc.JSDocComment
 import com.intellij.lang.javascript.psi.jsdoc.JSDocTagValue
 import com.intellij.lang.javascript.psi.jsdoc.impl.JSDocReference
+import com.intellij.lang.javascript.psi.jsdoc.impl.JSDocReferenceSet
 import com.intellij.lang.javascript.psi.resolve.JSClassResolver
 import com.intellij.lang.javascript.psi.resolve.JSResolveResult
+import com.intellij.lang.javascript.psi.resolve.JSResolveUtil
 import com.intellij.lang.javascript.psi.stubs.JSImplicitElement
 import com.intellij.lang.javascript.psi.stubs.TypeScriptMergedTypeImplicitElement
 import com.intellij.lang.javascript.psi.stubs.TypeScriptProxyImplicitElement
@@ -37,15 +40,94 @@ import com.intellij.lang.javascript.types.TypeFromUsageDetector
 import com.intellij.lang.typescript.TypeScriptGoToDeclarationHandler
 import com.intellij.lang.typescript.documentation.TypeScriptDocumentationProvider
 import com.intellij.lang.typescript.formatter.TypeScriptCodeStyleSettings
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.Ref
+import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.ex.temp.TempFileSystem
 import com.intellij.psi.*
 import com.intellij.psi.css.impl.util.CssDocumentationProvider
+import com.intellij.psi.impl.source.tree.SharedImplUtil
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.util.ObjectUtils
+import com.intellij.util.SmartList
+import com.intellij.util.containers.ContainerUtil
+import com.intellij.webcore.libraries.ScriptingLibraryManager
 import org.jetbrains.annotations.Nls
+import java.util.*
+import java.util.concurrent.atomic.AtomicInteger
 
-class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumentationProvider {
+class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: JSQuickNavigateBuilder) :
+        CodeDocumentationProvider, ExternalDocumentationProvider {
+
+    private val myLibraryDocProviderFactory = JSLibraryExtDocProviderFactory()
+
+    constructor() : this(JSQuickNavigateBuilder())
+
+    override fun getQuickNavigateInfo(element: PsiElement?, originalElement: PsiElement?): @Nls String? {
+        return QuickDocUtil.inferLinkFromFullDocumentation(this, element, originalElement,
+                myQuickNavigateBuilder.getQuickNavigateInfo(element, originalElement))
+    }
+
+    override fun fetchExternalDocumentation(project: Project?, element: PsiElement?, docUrls: List<String?>?,
+            onHover: Boolean): @Nls String? {
+        return null
+    }
+
+    @Deprecated("Deprecated in Java",
+            ReplaceWith("CompositeDocumentationProvider.hasUrlsFor(this, element, originalElement)",
+                    "com.intellij.lang.documentation.CompositeDocumentationProvider"))
+    override fun hasDocumentationFor(element: PsiElement?, originalElement: PsiElement?): Boolean {
+        return CompositeDocumentationProvider.hasUrlsFor(this, element, originalElement)
+    }
+
+    override fun canPromptToConfigureDocumentation(element: PsiElement?): Boolean {
+        return false
+    }
+
+    override fun promptToConfigureDocumentation(element: PsiElement?) {}
+
+    override fun getUrlFor(element: PsiElement, originalElement: PsiElement): List<String>? {
+        val possibleCssName = findPossibleCssName(element)
+        val cssUrls = if (possibleCssName != null) {
+            listOf(*CssDocumentationProvider.getUrlsFor(possibleCssName, element))
+        } else {
+            emptyList()
+        }
+
+        return cssUrls.ifEmpty { collectExternalUrls(element, originalElement) }
+    }
+
+    @Nls
+    private fun processMergedTypeMember(jsExpression: JSExpression, originalElement: PsiElement?,
+            results: Array<ResolveResult>): String {
+        val element = results[0].element!!
+
+        assert(element is TypeScriptMergedTypeImplicitElement)
+
+        val doc = java.lang.StringBuilder("<div class='definition'><pre>")
+        doc.append(myQuickNavigateBuilder.getQuickNavigateInfoForNavigationElement(element,
+                ObjectUtils.coalesce(originalElement, jsExpression), true))
+        doc.append("</pre></div>")
+        doc.append("<div class='content'>")
+        BetterTSDocSimpleInfoPrinter.addDescription(JavaScriptBundle.message("typescript.types.type.member",
+                getMergedKindDescription(results)), doc)
+        doc.append("<p>")
+        doc.append(JavaScriptBundle.message("typescript.types.merged.parts", *arrayOfNulls(0)))
+        doc.append("<br>")
+        val collector = LinkedDocCollector(this, originalElement, results, true)
+        val links = collector.getLinks()
+        if (links != null) {
+            doc.append(links)
+        }
+
+        doc.append("</div>")
+        return doc.toString()
+    }
 
     fun appendParameterDoc(builder: StringBuilder, parameter: JSParameter) {
         val settings = TypeScriptCodeStyleSettings.getTypeScriptSettings(parameter)
@@ -117,11 +199,6 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
         val builder = JSDocTextStringBuilder()
         realRawType.buildTypeText(TypeTextFormat.CODE, builder)
         return builder.result
-    }
-
-    override fun fetchExternalDocumentation(project: Project?, element: PsiElement?, docUrls: List<String?>?,
-            onHover: Boolean): @Nls String? {
-        return null
     }
 
     fun shouldAddTypeAnnotation(context: PsiElement?): Boolean {
@@ -208,7 +285,7 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
 
                 val isTypeOnlyComment = elementType != null && elementType.isEquivalentTo(
                         JSDocumentationUtils.tryCreateTypeFromComment(docComment, true, true, false), null)
-                val builder = this.createDocBuilder(element, originalElement)
+                val builder = this.createDocumentationBuilder(element, originalElement)
                 if (!isTypeOnlyComment) {
                     JSDocumentationUtils.processDocumentationTextFromComment(docComment, docComment.node, builder)
                 }
@@ -232,29 +309,41 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
             return null
         }
 
-        val builder = this.createDocBuilder(element, originalElement)
+        val builder = this.createDocumentationBuilder(element, originalElement)
         builder.fillEvaluatedType()
         return if (builder.showDoc()) builder.getDoc() else null
     }
 
-    fun createDocBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocumentationBuilder {
+    fun processMultiResolvedElements(element: PsiElement, originalElement: PsiElement?,
+            results: Array<ResolveResult>): @Nls String? {
+        JSResolveUtil.stableResolveOrder(results)
+        return if (element is JSExpression && results.isNotEmpty()
+                && ContainerUtil.and(results) { r -> r.element is TypeScriptMergedTypeImplicitElement }) {
+            this.processMergedTypeMember(element, originalElement, results)
+        } else {
+            val linkedDocCollector = LinkedDocCollector(this, originalElement, results)
+            val linkedDoc = linkedDocCollector.getDoc()
+            val links = linkedDocCollector.getLinks()
+            if (linkedDoc != null) {
+                if (links == null) linkedDoc else "$linkedDoc<div class='content'><p>$links</div>"
+            } else {
+                if (links != null) "<div class='content'><p>$links</div>" else null
+            }
+        }
+    }
+
+    fun createDocumentationBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocumentationBuilder {
         return BetterTSDocumentationBuilder(element, contextElement, this)
     }
 
-    private fun getPossibleMeaningfulElement(element: PsiElement): PsiElement {
-        if (element is JSFunction && element.isConstructor) {
-            val containingClass = JSUtils.getMemberContainingClass(element)
-            if (containingClass != null) {
-                return containingClass
-            }
-        }
-
-        return if (DumbService.isDumb(element.project)) element else JSStubBasedPsiTreeUtil.calculateMeaningfulElement(
-                element)
+    protected fun doGetCommentTextFromComment(_element: PsiComment, originalElement: PsiElement?): @Nls String? {
+        val builder = this.createDocumentationBuilder(_element, originalElement)
+        JSDocumentationUtils.processDocumentationTextFromComment(_element, _element.node, builder)
+        return builder.getDoc()
     }
 
     private fun getDocumentationForImplicitElement(element: JSImplicitElement): String? {
-        val builder = this.createDocBuilder(element, element)
+        val builder = this.createDocumentationBuilder(element, element)
         val comment = JSDocumentationUtils.findCommentForImplicitElement(element)
         if (comment != null) {
             JSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
@@ -336,20 +425,6 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
         return firstDocComment
     }
 
-    private fun getTypeofResolvedElement(docComment: PsiComment, type: JSType?): PsiElement? {
-        if (type is JSNamedType && type.jsContext == JSContext.STATIC) {
-            if (docComment is JSDocComment && docComment.tags.size == 1 && docComment.node.findChildByType(
-                            JSDocTokenTypes.DOC_COMMENT_DATA) == null
-            ) {
-                val value = docComment.tags[0].value ?: return null
-                val reference = value.reference
-                return if (reference is JSDocReference?) reference?.resolve() else null
-            }
-        }
-
-        return null
-    }
-
     private fun findPossibleCssName(element: PsiElement): String? {
         if (element is JSDefinitionExpression) {
             val expression = element.expression
@@ -373,6 +448,39 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
         }
 
         return null
+    }
+
+    override fun getDocumentationElementForLookupItem(psiManager: PsiManager?, any: Any?,
+            element: PsiElement?): PsiElement? {
+        var e = any
+        if (e is LookupElement) {
+            e = e.psiElement
+        }
+        return if (e is PsiElement) e else null
+    }
+
+    override fun getDocumentationElementForLink(psiManager: PsiManager, link: String,
+            context: PsiElement?): PsiElement? {
+        val delimiterIndex = link.lastIndexOf("%")
+        return if (delimiterIndex != -1) {
+            resolveDocumentLink(psiManager, link, delimiterIndex)
+        } else {
+            if (context != null) {
+                val references = JSDocReferenceSet(context, link, 0, false).references
+                if (references.isNotEmpty()) {
+                    val results = (references[references.size - 1] as JSDocReference).multiResolve(false)
+                    val var8 = results.size
+                    for (var9 in 0 until var8) {
+                        val result = results[var9]
+                        val resolve = result.element
+                        if (resolve != null) {
+                            return resolve
+                        }
+                    }
+                }
+            }
+            null
+        }
     }
 
     companion object {
@@ -427,6 +535,234 @@ class BetterTSDocumentationProvider : CodeDocumentationProvider, ExternalDocumen
             }
 
             return ResolveResult.EMPTY_ARRAY
+        }
+
+        private fun getTypeofResolvedElement(docComment: PsiComment, type: JSType?): PsiElement? {
+            if (type is JSNamedType && type.jsContext == JSContext.STATIC) {
+                if (docComment is JSDocComment && docComment.tags.size == 1 && docComment.node.findChildByType(
+                                JSDocTokenTypes.DOC_COMMENT_DATA) == null
+                ) {
+                    val value = docComment.tags[0].value ?: return null
+                    val reference = value.reference
+                    return if (reference is JSDocReference?) reference?.resolve() else null
+                }
+            }
+
+            return null
+        }
+
+        private fun getPossibleMeaningfulElement(element: PsiElement): PsiElement {
+            if (element is JSFunction && element.isConstructor) {
+                val containingClass = JSUtils.getMemberContainingClass(element)
+                if (containingClass != null) {
+                    return containingClass
+                }
+            }
+
+            return if (DumbService.isDumb(element.project)) {
+                element
+            } else {
+                JSStubBasedPsiTreeUtil.calculateMeaningfulElement(element)
+            }
+        }
+
+        private fun collectExternalUrls(element: PsiElement, originalElement: PsiElement): List<String>? {
+            val dialect = DialectDetector.dialectOfElement(element)
+            return if (dialect != null && !dialect.isECMA4 && element !is JSReferenceExpression) {
+                val urls: MutableList<String> = SmartList()
+                val project = element.project
+                if (JSDocumentationUtils.isFromCoreLibFile(element)) {
+                    val documentation = JSDocumentationUtils.getJsMdnDocumentation(element, originalElement)
+                    if (documentation != null) {
+                        urls.add(documentation.url)
+                    }
+                } else {
+                    val libManager = project.getService(JSLibraryManager::class.java) as ScriptingLibraryManager
+                    val file = element.containingFile.virtualFile ?: return null
+                    val var7 = libManager.getDocUrlsFor(file).iterator()
+                    while (var7.hasNext()) {
+                        val baseUrl = var7.next()
+                        addBaseUrl(urls, element, file, baseUrl)
+                    }
+                }
+                if (urls.isEmpty()) null else urls
+            } else {
+                null
+            }
+        }
+
+        private fun addBaseUrl(urls: MutableList<String>, docElement: PsiElement, libFile: VirtualFile,
+                baseUrl: String) {
+            if (docElement is JSPsiElementBase) {
+                var elementFQN = docElement.qualifiedName
+                if (elementFQN != null) {
+                    var relativeUrl: String
+                    if (libFile.path.contains("nodejs")) {
+                        elementFQN = patchNodejsFQN(elementFQN, libFile)
+                        relativeUrl = getParameterSignature(docElement)
+                        elementFQN += relativeUrl
+                    }
+                    relativeUrl = JSDocumentationUtils.getLibDocRelativeUrl(baseUrl, elementFQN)
+                    urls.add(baseUrl + (if (!baseUrl.endsWith("/") && !StringUtil.isEmpty(
+                                    relativeUrl)) "/" else "") + relativeUrl)
+                }
+            }
+        }
+
+        private fun patchNodejsFQN(fqn: String, libFile: VirtualFile): String {
+            var fileName = libFile.name
+            fileName = StringUtil.trimEnd(fileName, ".js")
+            return if (fqn.startsWith("exports.")) {
+                fqn.replace("^exports".toRegex(), fileName)
+            } else {
+                if (fqn.startsWith(fileName)) fqn else "$fileName.$fqn"
+            }
+        }
+
+        private fun getParameterSignature(element: PsiElement): String {
+            val parameterBuf = StringBuilder()
+            if (element is JSFunction) {
+                val var3 = element.parameterVariables
+                val var4 = var3.size
+                for (var5 in 0 until var4) {
+                    val parameter = var3[var5]
+                    parameterBuf.append('%').append(parameter.name)
+                }
+            }
+            return parameterBuf.toString()
+        }
+
+        private fun getMergedKindDescription(results: Array<ResolveResult>): String {
+            var commonDesc: String? = null
+            val var3 = results.size
+
+            var var4 = 0
+            while (var4 < var3) {
+                val r = results[var4]
+                val element = r.element as TypeScriptMergedTypeImplicitElement?
+                if (element != null) {
+                    if (commonDesc == null) {
+                        commonDesc = element.sourceKind.description
+                    } else {
+                        return JavaScriptBundle.message("typescript.types.merged")
+                    }
+                }
+
+                ++var4
+            }
+
+            return commonDesc ?: JavaScriptBundle.message("typescript.types.merged", *arrayOfNulls<Any>(0))
+        }
+
+        fun resolveDocumentLink(psiManager: PsiManager, link: String, namespaceDelimiterIndex: Int): PsiElement? {
+            var realLink = link
+            val project = psiManager.project
+            val filenameDelimiterIndex = realLink.lastIndexOf("%", namespaceDelimiterIndex - 1)
+            val symbolOffsetStart = realLink.lastIndexOf(":")
+            return if (filenameDelimiterIndex == -1) {
+                null
+            } else {
+                val elementId: Int
+                if (symbolOffsetStart > filenameDelimiterIndex) {
+                    elementId = StringUtil.parseInt(realLink.substring(symbolOffsetStart + 1), -1)
+                    realLink = realLink.substring(0, symbolOffsetStart)
+                } else {
+                    elementId = 0
+                }
+                val fileName = realLink.substring(0, filenameDelimiterIndex).replace('\\', '/')
+                val name = realLink.substring(filenameDelimiterIndex + 1, namespaceDelimiterIndex)
+                val qualifier = realLink.substring(namespaceDelimiterIndex + 1)
+                val isGlobal = "null" == qualifier
+                var relativeFile = if (ApplicationManager.getApplication().isUnitTestMode) TempFileSystem.getInstance()
+                        .findFileByPath(fileName) else VfsUtilCore.findRelativeFile(fileName, null as VirtualFile?)
+                if (relativeFile == null) {
+                    relativeFile = JSResolveUtil.findPredefinedOrLibraryFile(project, fileName)
+                }
+                val result: Ref<PsiElement> = Ref()
+                if (relativeFile != null) {
+                    val fileScope = GlobalSearchScope.fileScope(project, relativeFile)
+                    val qName = if (isGlobal) name else "$qualifier.$name"
+                    val index = AtomicInteger(0)
+                    JSClassResolver.getInstance().processElementsByQNameIncludingImplicit(qName, fileScope
+                    ) { base: JSPsiElementBase? ->
+                        result.set(base)
+                        index.incrementAndGet()
+                        elementId > 0 && index.get() != elementId
+                    }
+                }
+                result.get()
+            }
+        }
+
+        fun findElementForWhichPreviousCommentWillBeSearched(psiElement: PsiElement?,
+                context: PsiElement?): PsiElement? {
+            var parent: PsiElement
+            var grandParent: PsiElement
+            return if (psiElement !is JSFunction) {
+                if (context != null) {
+                    val relatedFunction = TypeScriptSignatureChooser.resolveAnyFunction(psiElement, context)
+                    if (relatedFunction != null) {
+                        return relatedFunction
+                    }
+                }
+                if (psiElement !is JSProperty && psiElement !is JSStatement && psiElement !is JSClass) {
+                    if (psiElement != null) {
+                        parent = psiElement.parent
+                        if (parent is JSAssignmentExpression) {
+                            SharedImplUtil.getParent(parent.getNode())
+                        } else if (parent is JSAttribute) {
+                            grandParent = parent.getParent()
+                            if (grandParent.firstChild === parent) {
+                                val element = grandParent.parent
+                                if (element is JSFile) grandParent else element
+                            } else {
+                                parent
+                            }
+                        } else {
+                            psiElement
+                        }
+                    } else {
+                        null
+                    }
+                } else {
+                    psiElement
+                }
+            } else {
+                parent = psiElement
+                grandParent = psiElement.getParent()
+                if (grandParent is JSNewExpression) {
+                    grandParent = grandParent.getParent()
+                }
+                if (grandParent is JSProperty) {
+                    parent = grandParent
+                } else if (grandParent is JSAssignmentExpression) {
+                    parent = grandParent.getParent()
+                }
+                if (psiElement.isSetProperty || psiElement.isGetProperty) {
+                    var doc: PsiElement? = JSDocumentationUtils.findDocComment(psiElement)
+                    if (doc != null) {
+                        return psiElement
+                    }
+                    var el = psiElement.getPrevSibling()
+                    while (el != null) {
+                        if (el !is PsiWhiteSpace && el !is PsiComment) {
+                            if (el is JSFunction) {
+                                val prevFunction = el as JSFunction
+                                val name = prevFunction.name
+                                if (name != null && name == psiElement.name && (prevFunction.isGetProperty && psiElement.isSetProperty || prevFunction.isSetProperty && psiElement.isGetProperty)) {
+                                    doc = JSDocumentationUtils.findDocComment(prevFunction)
+                                    if (doc != null) {
+                                        return prevFunction
+                                    }
+                                }
+                            }
+                            break
+                        }
+                        el = el.prevSibling
+                    }
+                }
+                parent
+            }
         }
 
     }
