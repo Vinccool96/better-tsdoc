@@ -1,7 +1,6 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
-import com.intellij.lang.javascript.documentation.JSDocumentationProvider
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.lang.javascript.index.JSItemPresentation
@@ -178,7 +177,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
             var text: String?
             if (namedItem !is JSAttributeNameValuePair && namedItem !is JSImplicitElement && namedItem !is JSDefinitionExpression && !DialectDetector.isActionScript(
                             namedItem)) {
-                val builder = provider.getQuickNavigateBuilder()
+                val builder = provider.quickNavigateBuilder
                 val element = contextElement ?: namedItem
                 text = builder.getQuickNavigateInfoForNavigationElement(namedItem, element, true)
                 if (text == null) {
@@ -266,7 +265,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
             }
         }
 
-        protected fun addJSDocVisibilityAndAccess(generationInfo: BetterTSDocBuilderSimpleInfo,
+        fun addJSDocVisibilityAndAccess(generationInfo: BetterTSDocBuilderSimpleInfo,
                 options: StringBuilder) {
             if (generationInfo.modifiers != null) {
                 if (options.isNotEmpty()) {

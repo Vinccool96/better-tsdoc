@@ -2,8 +2,9 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
 import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
-import com.intellij.lang.javascript.documentation.*
+import com.intellij.lang.javascript.documentation.JSDocumentationProcessor
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor.MetaDocType
+import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
 import com.intellij.lang.javascript.formatter.JSCodeStyleSettings
 import com.intellij.lang.javascript.index.JSSymbolUtil
@@ -38,6 +39,15 @@ import org.jetbrains.annotations.Nls
 import java.util.*
 import java.util.concurrent.atomic.AtomicReference
 import java.util.regex.Pattern
+import kotlin.collections.ArrayList
+import kotlin.collections.HashSet
+import kotlin.collections.Iterator
+import kotlin.collections.LinkedHashMap
+import kotlin.collections.MutableMap
+import kotlin.collections.MutableSet
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.listOf
 import kotlin.collections.set
 
 class BetterTSDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
@@ -567,7 +577,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             }
         }
 
-    fun getParameterDoc(parameter: JSParameter, docComment: PsiElement?, provider: JSDocumentationProvider,
+    fun getParameterDoc(parameter: JSParameter, docComment: PsiElement?, provider: BetterTSDocumentationProvider,
             place: PsiElement?): @Nls String? {
         return if (function == null) {
             null
@@ -610,7 +620,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
     @Nls
     private fun buildParameterInfo(name: String?, parameter: JSParameter,
             parameterInfo: BetterTSDocParameterInfoBuilder,
-            provider: JSDocumentationProvider, place: PsiElement?): String {
+            provider: BetterTSDocumentationProvider, place: PsiElement?): String {
         val newResult = StringBuilder()
         val printer = BetterTSDocParameterInfoPrinter(parameter, parameterInfo)
         printer.appendDoc(name, myTargetInfo, newResult, provider, place)
