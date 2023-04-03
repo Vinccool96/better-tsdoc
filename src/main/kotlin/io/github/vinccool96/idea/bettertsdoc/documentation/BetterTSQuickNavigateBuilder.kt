@@ -1,19 +1,22 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.javascript.JSParameterInfoHandler
+import com.intellij.lang.ASTNode
 import com.intellij.lang.ecmascript6.psi.*
+import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil.TextPlaceholder
-import com.intellij.lang.javascript.documentation.JavaScriptQuickNavigateBuilder
+import com.intellij.lang.javascript.documentation.JSQuickNavigateBuilder
 import com.intellij.lang.javascript.index.JSSymbolUtil
 import com.intellij.lang.javascript.presentable.JSFormatUtil
 import com.intellij.lang.javascript.psi.*
-import com.intellij.lang.javascript.psi.ecma6.TypeScriptModule
-import com.intellij.lang.javascript.psi.ecma6.TypeScriptThisType
-import com.intellij.lang.javascript.psi.ecma6.TypeScriptVariable
+import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
+import com.intellij.lang.javascript.psi.ecma6.*
+import com.intellij.lang.javascript.psi.ecmal4.JSAttributeList
+import com.intellij.lang.javascript.psi.ecmal4.JSAttributeListOwner
 import com.intellij.lang.javascript.psi.ecmal4.JSClass
-import com.intellij.lang.javascript.psi.impl.JSPsiElementFactory
-import com.intellij.lang.javascript.psi.impl.JSPsiImplUtils
+import com.intellij.lang.javascript.psi.impl.*
+import com.intellij.lang.javascript.psi.resolve.JSResolveResult
 import com.intellij.lang.javascript.psi.resolve.JSResolveUtil
 import com.intellij.lang.javascript.psi.resolve.JSTagContextBuilder
 import com.intellij.lang.javascript.psi.stubs.JSImplicitElement
@@ -21,11 +24,16 @@ import com.intellij.lang.javascript.psi.types.JSCompositeTypeImpl
 import com.intellij.lang.javascript.psi.types.JSTypeSubstitutor
 import com.intellij.lang.javascript.psi.types.JSUnionOrIntersectionType.OptimizedKind
 import com.intellij.lang.javascript.psi.types.JSUnionType
+import com.intellij.lang.javascript.psi.types.TypeScriptJSFunctionTypeImpl
+import com.intellij.lang.javascript.psi.types.guard.JSTypeGuardChecker
 import com.intellij.lang.javascript.psi.types.guard.TypeScriptTypeRelations
 import com.intellij.lang.javascript.psi.types.primitives.JSUndefinedType
+import com.intellij.lang.javascript.psi.util.JSUtils
 import com.intellij.lang.javascript.service.JSLanguageServiceUtil
 import com.intellij.lang.typescript.documentation.TypeScriptQuickNavigateBuilder
+import com.intellij.lang.typescript.psi.TypeScriptDeclarationMappings
 import com.intellij.lang.typescript.psi.TypeScriptPsiUtil
+import com.intellij.lang.typescript.resolve.TypeScriptGenericTypesEvaluator
 import com.intellij.lang.typescript.tsconfig.TypeScriptConfigUtil
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -33,14 +41,18 @@ import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiUtilCore
 import com.intellij.psi.xml.XmlToken
+import com.intellij.util.SmartList
 import com.intellij.util.containers.ContainerUtil
 
 @Suppress("UnstableApiUsage")
 class BetterTSQuickNavigateBuilder {
 
-    private val base = JavaScriptQuickNavigateBuilder()
+    private val base = JSQuickNavigateBuilder()
 
     fun getQuickNavigateInfoForNavigationElement(element: PsiElement, originalElement: PsiElement,
             jsDoc: Boolean): @NlsSafe String? {
@@ -534,6 +546,314 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
+    protected fun getTypeSubstitutor(candidate: JSElement, originalElement: PsiElement): JSTypeSubstitutor {
+        val element = getOriginalElementOrParentIfLeaf(originalElement)
+        val isSourceElement = isElementFromTSSources(candidate, element)
+        var typeSubstitutorTarget = candidate
+        if (isSourceElement) {
+            typeSubstitutorTarget = getOriginalResolvedElement(candidate,
+                    (element as JSReferenceExpression)!!)
+        }
+
+        return TypeScriptGenericTypesEvaluator.getInstance()
+                .getTypeSubstitutorForMember(typeSubstitutorTarget, element)
+    }
+
+    protected fun appendClassAttributes(jsClass: JSClass, originalElement: PsiElement, packageOrModule: String?,
+            result: StringBuilder) {
+        appendClassAttributes(jsClass, originalElement, packageOrModule, result, FunctionCallType.JAVASCRIPT)
+    }
+
+    private fun appendClassAttributes(jsClass: JSClass, originalElement: PsiElement, packageOrModule: String?,
+            result: StringBuilder, functionCallType: FunctionCallType) {
+        when (functionCallType) {
+            FunctionCallType.TYPESCRIPT, FunctionCallType.JAVASCRIPT -> {
+                val isAlias = jsClass is TypeScriptTypeAlias
+                val isEnum = jsClass is TypeScriptEnum
+                if (!isAlias && !isEnum) {
+                    appendClassAttributes(jsClass, originalElement, packageOrModule, result, FunctionCallType.JS)
+                } else {
+                    appendAttrList(jsClass, result)
+                    result.append(if (isAlias) "type " else "enum ")
+                }
+            }
+
+            FunctionCallType.JS -> {
+                appendAttrList(jsClass, result)
+                result.append(if (jsClass.isInterface) "interface " else "class ")
+            }
+        }
+    }
+
+    private fun appendGenerics(jsClass: JSClass, originalElement: PsiElement, result: StringBuilder) {
+        if (jsClass is TypeScriptTypeParameterListOwner) {
+            val substitutor = getTypeSubstitutor(jsClass, originalElement)
+            val generics = getGenerics(jsClass, substitutor)
+            if (generics != null) {
+                result.append(generics)
+            }
+        }
+    }
+
+    protected fun getVarPrefix(variable: JSVariable): String {
+        return getVarPrefix(variable, FunctionCallType.JAVASCRIPT)
+    }
+
+    private fun getVarPrefix(variable: JSVariable, functionCallType: FunctionCallType): String {
+        return when (functionCallType) {
+            FunctionCallType.TYPESCRIPT, FunctionCallType.JAVASCRIPT -> {
+                if (variable !is JSField && variable !is JSParameter) {
+                    getVarPrefix(variable, FunctionCallType.JS)
+                } else {
+                    ""
+                }
+            }
+
+            FunctionCallType.JS -> {
+                val statement = variable.statement
+                val keyword = statement?.varKeyword
+                if (keyword != null) keyword.text + " " else ""
+            }
+        }
+    }
+
+    protected fun getParentInfo(parent: PsiElement?, element: PsiNamedElement,
+            substitutor: JSTypeSubstitutor): String? {
+        return getParentInfo(parent, element, substitutor, FunctionCallType.JAVASCRIPT)
+    }
+
+    private fun getParentInfo(parent: PsiElement?, element: PsiNamedElement, substitutor: JSTypeSubstitutor,
+            functionCallType: FunctionCallType): String? {
+        when (functionCallType) {
+            FunctionCallType.TYPESCRIPT, FunctionCallType.JAVASCRIPT -> {
+                var realParent = parent
+                if (element is JSParameter && TypeScriptPsiUtil.isFieldParameter(element)) {
+                    realParent = JSUtils.getMemberContainingClass(element)
+                }
+
+                if (realParent is TypeScriptInterfaceClass) {
+                    val generics = getGenerics(realParent, substitutor)
+                    if (generics != null) {
+                        val className = StringUtil.notNullize((realParent as JSClass).qualifiedName, "default")
+                        return className + StringUtil.escapeXmlEntities(generics)
+                    }
+                }
+
+                return if (realParent is TypeScriptModule && realParent.isInternal) {
+                    realParent.qualifiedName
+                } else {
+                    getParentInfo(realParent, element, substitutor, FunctionCallType.JS)
+                }
+            }
+
+            FunctionCallType.JS -> {
+                return if (parent is JSClass) StringUtil.notNullize(parent.qualifiedName, "default") else ""
+            }
+        }
+    }
+
+    protected fun formatVisibility(owner: JSAttributeListOwner, attributeList: JSAttributeList,
+            type: JSAttributeList.AccessType): String? {
+        return formatVisibility(owner, attributeList, type, FunctionCallType.JAVASCRIPT)
+    }
+
+    private fun formatVisibility(owner: JSAttributeListOwner, attributeList: JSAttributeList,
+            type: JSAttributeList.AccessType, functionCallType: FunctionCallType): String? {
+        when (functionCallType) {
+            FunctionCallType.TYPESCRIPT, FunctionCallType.JAVASCRIPT -> {
+                return if (type == JSAttributeList.AccessType.PUBLIC && attributeList.explicitAccessType == null) {
+                    null
+                } else {
+                    if (type == JSAttributeList.AccessType.PRIVATE && attributeList.hasPrivateSharp()) {
+                        null
+                    } else {
+                        formatVisibility(owner, attributeList, type, FunctionCallType.JS)
+                    }
+                }
+            }
+
+            FunctionCallType.JS -> {
+                return JSFormatUtil.formatVisibility(type, owner)
+            }
+        }
+    }
+
+    protected fun expandParameters(functionItem: JSFunctionItem,
+            parameters: Collection<BetterTSDocParameterInfoPrinter>,
+            substitutor: JSTypeSubstitutor): Collection<BetterTSDocParameterInfoPrinter> {
+        val result = ArrayList<BetterTSDocParameterInfoPrinter>()
+        val functionType = JSParameterInfoHandler.mapToFunction(functionItem, substitutor)
+        val decorators = TypeScriptJSFunctionTypeImpl.expandRestTupleTypes(functionType.parameters, -1)
+        val infos = SmartList(parameters)
+
+        for (i in decorators.indices) {
+            val decorator = decorators[i]
+            if (infos.size > i) {
+                val info = infos[i]
+                val item = info!!.parameterItem
+                if (info.hasTypeElement() && !item.typeDecorator.isEquivalentTo(decorator, null, true)) {
+                    result.add(BetterTSDocParameterInfoPrinter(decorator))
+                } else {
+                    result.add(info)
+                }
+            } else {
+                result.add(BetterTSDocParameterInfoPrinter(decorator))
+            }
+        }
+
+        return result
+    }
+
+    protected fun getNarrowedType(originalElement: PsiElement, substitutor: JSTypeSubstitutor): JSType? {
+        val realOriginalElement = getOriginalElementOrParentIfLeaf(originalElement)
+        if (realOriginalElement is JSReferenceExpression
+                && JSTypeGuardChecker.isNarrowableReference(realOriginalElement)) {
+            val narrowType = JSResolveUtil.getExpressionJSType(realOriginalElement)
+            if (narrowType != null && (narrowType.isTypeScript || narrowType !is JSRecordType)) {
+                return getTypeWithAppliedSubstitutor(narrowType, substitutor)
+            }
+        }
+
+        return null
+    }
+
+    protected fun isGuessedOptional(variableLikeElement: JSElement): Boolean {
+        return isGuessedOptional(variableLikeElement, FunctionCallType.JAVASCRIPT)
+    }
+
+    private fun isGuessedOptional(variableLikeElement: JSElement, functionCallType: FunctionCallType): Boolean {
+        when (functionCallType) {
+            FunctionCallType.TYPESCRIPT, FunctionCallType.JAVASCRIPT -> {
+                if (variableLikeElement is JSParameter && DialectDetector.isJavaScript(
+                                variableLikeElement) && variableLikeElement.jsType == null) {
+                    val function = variableLikeElement.declaringFunction
+                    val name = variableLikeElement.getName()
+                    if (function != null && name != null) {
+                        val optionalCandidates = CachedValuesManager.getCachedValue(function) {
+                            val visitor = JSOptionalityEvaluator()
+                            visitor.visitElement(function.node)
+                            CachedValueProvider.Result(visitor.myOptionalCandidates, function)
+                        }
+                        return optionalCandidates != null && optionalCandidates.contains(name)
+                    }
+                }
+
+                return isGuessedOptional(variableLikeElement, FunctionCallType.JS)
+            }
+
+            FunctionCallType.JS -> {
+                return false
+            }
+        }
+    }
+
+    private class JSOptionalityEvaluator : JSRecursiveNodeVisitor() {
+
+        val myOptionalCandidates: MutableSet<String> = HashSet()
+
+        override fun visitBinaryExpression(node: ASTNode) {
+            var child = node.findChildByType(JSTokenTypes.OROR)
+            if (child != null) {
+                addRef(node)
+            } else {
+                child = node.findChildByType(JSTokenTypes.ANDAND)
+                if (child != null) {
+                    addRef(node)
+                } else {
+                    val childByType = node.findChildByType(JSTokenTypes.EQUALITY_OPERATIONS)
+                    if (childByType != null) {
+                        val identifier = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET, childByType)
+                        if (identifier != null) {
+                            if (identifier.findChildByType(JSTokenTypes.UNDEFINED_KEYWORD) != null) {
+                                addRef(node)
+                            } else {
+                                val firstIdentifier = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET)
+                                if (firstIdentifier?.findChildByType(JSTokenTypes.UNDEFINED_KEYWORD) != null) {
+                                    addExpr(identifier)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            super.visitBinaryExpression(node)
+        }
+
+        override fun visitPrefixExpression(node: ASTNode) {
+            var child = node.findChildByType(JSTokenTypes.TYPEOF_KEYWORD)
+            if (child == null) {
+                child = node.findChildByType(JSTokenTypes.EXCL)
+            }
+            if (child != null) {
+                addRef(node)
+            }
+            super.visitPrefixExpression(node)
+        }
+
+        override fun visitIfStatement(node: ASTNode) {
+            addRef(node)
+            super.visitIfStatement(node)
+        }
+
+        override fun visitProperty(node: ASTNode) {
+            val name = JSPropertyImpl.findNameIdentifier(node)
+            if (name != null) {
+                val expr = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET, name.treeNext)
+                if (expr != null && expr !== name) {
+                    addExpr(expr)
+                }
+            }
+            super.visitProperty(node)
+        }
+
+        override fun visitArgumentList(node: ASTNode) {
+            var treeNext: ASTNode
+            var expr = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET)
+            while (expr != null) {
+                addExpr(expr)
+                treeNext = expr.treeNext
+                expr = if (treeNext != null) {
+                    node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET, treeNext)
+                } else {
+                    null
+                }
+            }
+            super.visitArgumentList(node)
+        }
+
+        private fun addRef(node: ASTNode) {
+            val firstExpr = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET)
+            addExpr(firstExpr)
+            if (firstExpr != null && node.elementType === JSElementTypes.BINARY_EXPRESSION) {
+                val treeParent = node.treeParent
+                if (treeParent.elementType === JSElementTypes.BINARY_EXPRESSION) {
+                    val treeNext = firstExpr.treeNext
+                    if (treeNext != null) {
+                        addExpr(node.findChildByType(JSExtendedLanguagesTokenSetProvider.EXPRESSIONS, treeNext))
+                    }
+                }
+            }
+        }
+
+        private fun addExpr(expr: ASTNode?) {
+            if (expr != null && expr.elementType === JSElementTypes.REFERENCE_EXPRESSION
+                    && JSReferenceExpressionImpl.getQualifierNode(expr) == null) {
+                val node = expr.firstChildNode ?: return
+                if (node.treeNext == null) {
+                    val ref = node.text
+                    myOptionalCandidates.add(ref)
+                }
+            }
+        }
+
+        override fun visitAsFunction(function: ASTNode?): Boolean {
+            return true
+        }
+
+        override fun visitDocComment(node: ASTNode?) {}
+
+    }
+
     enum class ObjectKind {
         SIMPLE_DECLARATION {
 
@@ -677,6 +997,57 @@ class BetterTSQuickNavigateBuilder {
                 null
             } else {
                 BetterTSServiceQuickInfoParser.parseServiceTextAsInfo(serviceResult)
+            }
+        }
+
+        private fun isElementFromTSSources(member: JSElement, originalElement: PsiElement): Boolean {
+            return originalElement is JSReferenceExpression
+                    && java.lang.Boolean.TRUE == TypeScriptDeclarationMappings.SOURCE_FILE_MARKER[member]
+        }
+
+        private fun getOriginalResolvedElement(member: JSElement, originalElement: JSReferenceExpression): JSElement {
+            val results = originalElement.multiResolve(false)
+            val resolvedElements = JSResolveResult.toElements(results)
+
+            return if (resolvedElements.size != 1) {
+                member
+            } else {
+                val candidate = ContainerUtil.getFirstItem(resolvedElements)
+                if (candidate is JSElement) {
+                    candidate
+                } else {
+                    member
+                }
+            }
+        }
+
+        protected fun getGenerics(element: JSElement, substitutor: JSTypeSubstitutor): String? {
+            return if (element is TypeScriptTypeParameterListOwner) {
+                val list = element.typeParameterList
+                if (list == null) {
+                    null
+                } else {
+                    val parameters = list.typeParameters
+                    if (parameters.isEmpty()) {
+                        null
+                    } else {
+                        val newBuilder = java.lang.StringBuilder()
+                        newBuilder.append("<")
+                        newBuilder.append(StringUtil.join(parameters, { el ->
+                            var name = el.name
+                            if (name == null) {
+                                name = "?"
+                            }
+                            val id = el.genericId
+                            val type = substitutor[id]
+                            type?.getTypeText(TypeTextFormat.PRESENTABLE) ?: name
+                        }, ","))
+                        newBuilder.append(">")
+                        newBuilder.toString()
+                    }
+                }
+            } else {
+                null
             }
         }
 
