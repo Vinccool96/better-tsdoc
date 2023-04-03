@@ -34,8 +34,8 @@ open class BetterTSDocSymbolInfoBuilder : BetterTSDocBuilderSimpleInfo() {
         }
     }
 
-    fun setDefaultValue(content: String?, color: Boolean, originalText: String?) {
-        defaultValue = BetterTSDocSymbolInfoPrinter.buildCurrentOrDefaultValue(content, color, true, originalText, true)
+    fun setDefaultValue(content: String, color: Boolean, originalText: String?) {
+        defaultValue = BetterTSDocSimpleInfoPrinter.buildCurrentOrDefaultValue(content, color, true, originalText, true)
     }
 
     companion object {

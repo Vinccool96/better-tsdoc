@@ -3,56 +3,67 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 import com.intellij.javascript.JSParameterInfoHandler
 import com.intellij.lang.ASTNode
 import com.intellij.lang.ecmascript6.psi.*
+import com.intellij.lang.ecmascript6.resolve.ES6ImportHandler
+import com.intellij.lang.ecmascript6.resolve.ES6PsiUtil
 import com.intellij.lang.javascript.*
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil.TextPlaceholder
-import com.intellij.lang.javascript.documentation.JSQuickNavigateBuilder
+import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.index.JSSymbolUtil
 import com.intellij.lang.javascript.presentable.JSFormatUtil
 import com.intellij.lang.javascript.psi.*
+import com.intellij.lang.javascript.psi.JSFunction.FunctionKind
 import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
 import com.intellij.lang.javascript.psi.ecma6.*
-import com.intellij.lang.javascript.psi.ecmal4.JSAttributeList
-import com.intellij.lang.javascript.psi.ecmal4.JSAttributeListOwner
-import com.intellij.lang.javascript.psi.ecmal4.JSClass
+import com.intellij.lang.javascript.psi.ecmal4.*
 import com.intellij.lang.javascript.psi.impl.*
+import com.intellij.lang.javascript.psi.resolve.JSImportHandlingUtil
 import com.intellij.lang.javascript.psi.resolve.JSResolveResult
 import com.intellij.lang.javascript.psi.resolve.JSResolveUtil
 import com.intellij.lang.javascript.psi.resolve.JSTagContextBuilder
 import com.intellij.lang.javascript.psi.stubs.JSImplicitElement
-import com.intellij.lang.javascript.psi.types.JSCompositeTypeImpl
-import com.intellij.lang.javascript.psi.types.JSTypeSubstitutor
+import com.intellij.lang.javascript.psi.types.*
+import com.intellij.lang.javascript.psi.types.JSArrayType.GenericArrayBuilder
 import com.intellij.lang.javascript.psi.types.JSUnionOrIntersectionType.OptimizedKind
-import com.intellij.lang.javascript.psi.types.JSUnionType
-import com.intellij.lang.javascript.psi.types.TypeScriptJSFunctionTypeImpl
+import com.intellij.lang.javascript.psi.types.evaluable.JSEvaluableOnlyType
 import com.intellij.lang.javascript.psi.types.guard.JSTypeGuardChecker
 import com.intellij.lang.javascript.psi.types.guard.TypeScriptTypeRelations
 import com.intellij.lang.javascript.psi.types.primitives.JSUndefinedType
 import com.intellij.lang.javascript.psi.util.JSUtils
+import  io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSHtmlHighlightingUtil.TextPlaceholder
 import com.intellij.lang.javascript.service.JSLanguageServiceUtil
+import com.intellij.lang.javascript.settings.JSSymbolPresentationProvider
 import com.intellij.lang.typescript.documentation.TypeScriptQuickNavigateBuilder
 import com.intellij.lang.typescript.psi.TypeScriptDeclarationMappings
 import com.intellij.lang.typescript.psi.TypeScriptPsiUtil
 import com.intellij.lang.typescript.resolve.TypeScriptGenericTypesEvaluator
 import com.intellij.lang.typescript.tsconfig.TypeScriptConfigUtil
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.colors.CodeInsightColors
 import com.intellij.openapi.progress.ProcessCanceledException
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.NlsSafe
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiUtilCore
+import com.intellij.psi.xml.XmlAttribute
+import com.intellij.psi.xml.XmlAttributeValue
 import com.intellij.psi.xml.XmlToken
+import com.intellij.ui.ColorUtil
 import com.intellij.util.SmartList
 import com.intellij.util.containers.ContainerUtil
+import com.intellij.util.ui.StartupUiUtil
+import com.intellij.xml.util.XmlStringUtil
+import org.jetbrains.annotations.Contract
+import org.jetbrains.annotations.Nls
 
 @Suppress("UnstableApiUsage")
 class BetterTSQuickNavigateBuilder {
-
-    private val base = JSQuickNavigateBuilder()
 
     fun getQuickNavigateInfoForNavigationElement(element: PsiElement, originalElement: PsiElement,
             jsDoc: Boolean): @NlsSafe String? {
@@ -95,7 +106,7 @@ class BetterTSQuickNavigateBuilder {
             }
 
             FunctionCallType.JS -> {
-                val realOriginalElement = getOriginalElementOrParentIfLeaf(originalElement)
+                val realOriginalElement = getOriginalElementOrParentIfLeaf(originalElement)!!
                 return if (element is JSFunction) {
                     createForFunction(element, realOriginalElement)
                 } else if (element is JSClass) {
@@ -113,8 +124,7 @@ class BetterTSQuickNavigateBuilder {
                         xmlAttributeDoc
                     } else {
                         val builder = JSTagContextBuilder(element, "XmlTag")
-                        val var10000 = StringUtil.unquoteString(element.getText())
-                        var10000 + ":" + builder.typeName
+                        StringUtil.unquoteString(element.getText()) + ":" + builder.typeName
                     }
                 } else {
                     null
@@ -221,7 +231,7 @@ class BetterTSQuickNavigateBuilder {
                 val paramsStart = currentBuilder.length + escapedName.length + modifiers.length
                 val lengthToWrapAll = 10
                 val alignment = if (paramsStart >= lengthToWrapAll) 4 else paramsStart
-                val placeholders: MutableList<TextPlaceholder?> = ArrayList()
+                val placeholders: MutableList<TextPlaceholder> = ArrayList()
                 var lastLineStart = escapedName.length
                 val var17 = realParameters.iterator()
 
@@ -249,7 +259,7 @@ class BetterTSQuickNavigateBuilder {
                         }
                         type = getTypeWithAppliedSubstitutor(type, substitutor)
                         val holder =
-                                JSHtmlHighlightingUtil.getTypeWithLinksPlaceholder(type,
+                                BetterTSHtmlHighlightingUtil.getTypeWithLinksPlaceholder(type,
                                         parameterInfo.myBuilder.hasFiredEvents,
                                         "$\$Type$\$Parameter" + hashCode())
                         placeholders.add(holder)
@@ -274,13 +284,13 @@ class BetterTSQuickNavigateBuilder {
                     if (!functionItem.isGetProperty) {
                         type = returnType
                     }
-                    val placeholder = JSHtmlHighlightingUtil.getTypeWithLinksPlaceholder(type,
+                    val placeholder = BetterTSHtmlHighlightingUtil.getTypeWithLinksPlaceholder(type,
                             returnInfo.hasFiredEvents, "$\$Type$\$Unique")
                     ContainerUtil.addIfNotNull(placeholders, placeholder)
                     currentBuilder.append(placeholder.holderText)
                 }
 
-                val s = "" + JSHtmlHighlightingUtil.getFunctionHtmlHighlighting(functionItem, escapedName,
+                val s = "" + BetterTSHtmlHighlightingUtil.getFunctionHtmlHighlighting(functionItem, escapedName,
                         shouldAppendFunctionKeyword, modifiers, currentBuilder,
                         placeholders) + returnTypeBuilder.toString()
                 return if (jsDoc) {
@@ -304,8 +314,9 @@ class BetterTSQuickNavigateBuilder {
             val rawNewName = info.myQName
             if (!rest.startsWith("(")) {
                 if (rest.startsWith(":") && functionItem.isGetProperty) {
-                    val type = JSHtmlHighlightingUtil.parseType(StringUtil.trimStart(rest, ":").trim { it <= ' ' },
-                            functionItem)
+                    val type =
+                            BetterTSHtmlHighlightingUtil.parseType(StringUtil.trimStart(rest, ":").trim { it <= ' ' },
+                                    functionItem)
                     if (type != null) {
                         val newReturnInfo = BetterTSDocBuilderSimpleInfo()
                         newReturnInfo.jsType = type
@@ -431,22 +442,21 @@ class BetterTSQuickNavigateBuilder {
                     false
                 } else {
                     val serviceTypeText = part.substring(if (part.startsWith(":")) 1 else 2).trim { it <= ' ' }
-                    val parsedServiceType = JSHtmlHighlightingUtil.parseType(serviceTypeText, originalElement)
+                    val parsedServiceType = BetterTSHtmlHighlightingUtil.parseType(serviceTypeText, originalElement)
                     if (parsedServiceType != null) {
                         val highlighting = restoreHolders(info,
-                                JSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(parsedServiceType,
+                                BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(parsedServiceType,
                                         originalElement, false))
                         if (Registry.`is`("typescript.show.own.type")) {
                             appendType(originalElement, highlighting.toString(), builder)
                             builder.append("\n<span style='color:grey;'>[ide type]</span>")
-                            super.appendTypeWithSeparatorForOwner(typeOwner, toUse, substitutor, builder,
+                            appendTypeWithSeparatorForOwner(typeOwner, toUse, substitutor, builder,
                                     originalElement, true)
                         } else {
                             appendType(originalElement, highlighting.toString(), builder)
                         }
                     } else {
-                        builder.append(
-                                TypeScriptQuickNavigateBuilder.restoreHolders(info, StringUtil.escapeXmlEntities(part)))
+                        builder.append(restoreHolders(info, StringUtil.escapeXmlEntities(part)))
                     }
                     true
                 }
@@ -547,12 +557,11 @@ class BetterTSQuickNavigateBuilder {
     }
 
     protected fun getTypeSubstitutor(candidate: JSElement, originalElement: PsiElement): JSTypeSubstitutor {
-        val element = getOriginalElementOrParentIfLeaf(originalElement)
+        val element = getOriginalElementOrParentIfLeaf(originalElement)!!
         val isSourceElement = isElementFromTSSources(candidate, element)
         var typeSubstitutorTarget = candidate
         if (isSourceElement) {
-            typeSubstitutorTarget = getOriginalResolvedElement(candidate,
-                    (element as JSReferenceExpression)!!)
+            typeSubstitutorTarget = getOriginalResolvedElement(candidate, element as JSReferenceExpression)
         }
 
         return TypeScriptGenericTypesEvaluator.getInstance()
@@ -744,6 +753,335 @@ class BetterTSQuickNavigateBuilder {
             FunctionCallType.JS -> {
                 return false
             }
+        }
+    }
+
+    fun getQuickNavigateInfo(element: PsiElement?, originalElement: PsiElement?): @Nls String? {
+        return if (originalElement == null) {
+            null
+        } else {
+            var realElement = element
+            if (realElement is JSOffsetBasedImplicitElement) {
+                realElement = realElement.elementAtOffset
+            }
+            if (realElement != null && !DumbService.isDumb(realElement.project)) {
+                this.getQuickNavigateInfoForNavigationElement(realElement.navigationElement, originalElement, false)
+            } else {
+                null
+            }
+        }
+    }
+
+    protected fun createForProperty(element: JSProperty, originalElement: PsiElement, jsDoc: Boolean): String? {
+        var name = JSPsiImplUtils.getNameOrComputedPropertyName(element, true)
+        return if (name == null) {
+            null
+        } else {
+            name = BetterTSDocumentationBuilder.ensureBracketsForQuotedName(name, '"')
+            val parent = if (element === getOriginalElementOrParentIfLeaf(originalElement)) {
+                null
+            } else {
+                getPropertyParent(element)
+            }
+            val qName = formatMemberAccess(parent?.qualifiedName, name, ".")
+            val substitutor = getTypeSubstitutor(element, originalElement)
+            val declaredType = getPropertyType(element)!!
+            val typePart = createTypePart(element, originalElement, jsDoc, substitutor, declaredType)
+            val result = buildHtmlForProperty(element, qName, if (jsDoc) "" else typePart) + if (jsDoc) typePart else ""
+            val kind = if (element.value is JSFunctionExpression) ObjectKind.FUNCTION else ObjectKind.PROPERTY
+            if (jsDoc) {
+                result
+            } else {
+                buildResult(kind, result, element, originalElement)
+            }
+        }
+    }
+
+    protected fun getPropertyType(element: JSProperty): JSType? {
+        return JSTypeUtils.widenLiteralTypes(element.jsType)
+    }
+
+    private fun getPropertyParent(property: JSProperty): JSQualifiedNamedElement? {
+        val parent = property.parent
+        if (parent is JSObjectLiteralExpression) {
+            val literalContainer = parent.getParent()
+            if (literalContainer is JSVariable) {
+                return literalContainer
+            }
+        }
+
+        return null
+    }
+
+    protected fun createForFunction(function: JSFunction, originalElement: PsiElement): String? {
+        val newParameters: List<BetterTSDocParameterInfoPrinter> = mapParametersToInfos(function)
+        val newReturnInfo: BetterTSDocBuilderSimpleInfo = mapReturnTypeToInfo(function)
+        return getFunctionDefinitionWithHighlighting(function, newParameters, newReturnInfo, originalElement,
+                false).toString()
+    }
+
+    protected fun getQNameSeparator(element: PsiElement): String {
+        return "."
+    }
+
+    fun getFunctionDefinitionWithHighlighting(functionItem: JSFunctionItem,
+            parameters: Collection<BetterTSDocParameterInfoPrinter>, returnInfo: BetterTSDocBuilderSimpleInfo,
+            originalElement: PsiElement, jsDoc: Boolean): CharSequence {
+        val substitutor = getTypeSubstitutor(functionItem, originalElement)
+        val escapedName = this.getFunctionNameWithHtml(functionItem, substitutor)
+        return this.getFunctionDefinition(functionItem, escapedName, substitutor, parameters, returnInfo,
+                originalElement, jsDoc)
+    }
+
+    protected fun getFunctionKind(function: JSFunctionItem, isGetterOrSetter: Boolean,
+            shouldAppendKeyword: Boolean): ObjectKind {
+        return if (isGetterOrSetter) {
+            ObjectKind.PROPERTY
+        } else if (function is JSFunction && function.isConstructor) {
+            ObjectKind.SIMPLE_DECLARATION
+        } else if (shouldAppendKeyword) {
+            ObjectKind.SIMPLE_DECLARATION
+        } else {
+            ObjectKind.FUNCTION
+        }
+    }
+
+    protected fun createForVariableOrField(variableOrField: JSFieldVariable, originalElement: PsiElement?,
+            jsDoc: Boolean): String {
+        val parent = JSResolveUtil.findParent(variableOrField)
+        val modifiers = java.lang.StringBuilder()
+        val substitutor = getTypeSubstitutor(variableOrField, originalElement!!)
+        appendAttrList(variableOrField, modifiers)
+        var hasVarPrefix = false
+        var prefix: String?
+        if (variableOrField is JSVariable) {
+            prefix = this.getVarPrefix(variableOrField)
+            if (prefix.isNotEmpty()) {
+                hasVarPrefix = true
+                modifiers.append(prefix)
+            }
+        }
+
+        prefix = getParentInfo(parent, variableOrField, substitutor)
+        val name = BetterTSDocumentationBuilder.getNameForDocumentation(variableOrField)
+        val qName = formatMemberAccess(prefix, name, getQNameSeparator(variableOrField))
+        val declaredType = getVariableOrFieldType(variableOrField)!!
+        val typeAndInitializer = createTypePart(variableOrField, originalElement, jsDoc, substitutor, declaredType)
+        val textWithHighlighting = buildHtmlForVariableOrField(variableOrField, modifiers, qName, hasVarPrefix,
+                (if (jsDoc) "" else typeAndInitializer))
+
+        return if (jsDoc) {
+            textWithHighlighting + typeAndInitializer
+        } else {
+            val kind = getFieldOrVariableKind(variableOrField)
+            buildResult(kind, textWithHighlighting, variableOrField, originalElement)
+        }
+    }
+
+    private fun createTypePart(element: JSElement, originalElement: PsiElement, jsDoc: Boolean,
+            substitutor: JSTypeSubstitutor, declaredType: JSType): CharSequence {
+        val typePart = StringBuilder()
+        val narrowedType = getNarrowedType(originalElement, substitutor)
+        val type = appendOptionality(element, declaredType, narrowedType, typePart, originalElement)
+        this.appendTypeWithSeparatorForOwner(element, type, substitutor, typePart, originalElement, jsDoc)
+        if (element is JSVariable && element.hasInitializer() && !jsDoc) {
+            appendVariableInitializer(element, typePart)
+        }
+
+        return typePart
+    }
+
+    protected fun mapParametersToInfos(parsedFunction: JSFunctionItem): List<BetterTSDocParameterInfoPrinter> {
+        return ContainerUtil.map(parsedFunction.parameters) { parameter: JSParameterItem? ->
+            BetterTSDocParameterInfoPrinter(parameter)
+        }
+    }
+
+    protected fun mapReturnTypeToInfo(parsedFunction: JSFunctionItem): BetterTSDocBuilderSimpleInfo {
+        val newReturnInfo = BetterTSDocBuilderSimpleInfo()
+        newReturnInfo.jsType = parsedFunction.returnType
+
+        return newReturnInfo
+    }
+
+    fun createForJSClass(jsClass: JSClass, originalElement: PsiElement?, jsDoc: Boolean): String? {
+        var qName = jsClass.qualifiedName
+        return if (qName == null) {
+            null
+        } else {
+            val attributesAndKeyword = StringBuilder()
+            val packageName = StringUtil.getPackageName(qName)
+            this.appendClassAttributes(jsClass, originalElement!!, packageName, attributesAndKeyword)
+            qName = getClassQualifiedName(jsClass, packageName)!!
+            val extendsImplements = StringBuilder()
+            appendClassExtendsAndImplements(jsClass, originalElement, packageName, extendsImplements)
+            val htmlForClass = buildHtmlForClass(jsClass, attributesAndKeyword, qName, extendsImplements)
+            if (jsDoc) {
+                htmlForClass
+            } else {
+                buildResult(ObjectKind.SIMPLE_DECLARATION, htmlForClass, jsClass, originalElement)
+            }
+        }
+    }
+
+    protected fun getReturnTypeForQuickNavigate(function: JSFunctionItem, set: Boolean, returnType: JSType?,
+            substitutor: JSTypeSubstitutor): JSType? {
+        return if (!set) {
+            var type = returnType
+            if (returnType is JSFunctionReturnWrapperType) {
+                type = returnType.substitute()
+            }
+            if (!JSFormatUtil.isPossiblyPresentableType(type, function, true)) {
+                null
+            } else {
+                getTypeWithAppliedSubstitutor(type, substitutor)
+            }
+        } else {
+            val parameters = function.parameters
+            if (parameters.isNotEmpty()) {
+                getTypeWithAppliedSubstitutor(parameters[0].inferredType, substitutor)
+            } else {
+                null
+            }
+        }
+    }
+
+    protected fun getPresentableTypeText(rawType: JSType?, substitutor: JSTypeSubstitutor, jsDoc: Boolean,
+            context: PsiElement?): String? {
+        var type = getTypeWithAppliedSubstitutor(rawType, substitutor)
+        return if (type == null) {
+            null
+        } else if (jsDoc) {
+            BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(expandTypeForPresentation(type, false),
+                    context,
+                    false).toString()
+        } else if (type.isJavaScript && type is JSEvaluableOnlyType) {
+            null
+        } else {
+            type = expandTypeForPresentation(type, false)
+            type.getTypeText(TypeTextFormat.PRESENTABLE)
+        }
+    }
+
+    protected fun getTypeWithAppliedSubstitutor(rawType: JSType?, substitutor: JSTypeSubstitutor): JSType? {
+        return JSTypeUtils.applyGenericArguments(JSTypeUtils.applyCompositeMapping(rawType) { el: JSType? ->
+            GenericArrayBuilder.asArrayIfGenericType(JSCompositeTypeImpl.optimizeTypeIfComposite(el))
+        }, substitutor)
+    }
+
+    protected fun appendFunctionAttributes(functionItem: JSFunctionItem, result: StringBuilder,
+            shouldAppendKeyword: Boolean) {
+        if (functionItem is JSFunction) {
+            appendAttrList(functionItem, result)
+            if (shouldAppendKeyword) {
+                result.append(if (functionItem.kind == FunctionKind.DECORATOR) "decorator @" else "function ")
+            }
+        } else if (shouldAppendKeyword) {
+            result.append("function ")
+        }
+    }
+
+    protected fun shouldAppendFunctionKeyword(function: JSFunctionItem, parent: PsiElement?): Boolean {
+        return if (JSPsiImplUtils.isGetterOrSetter(function)) {
+            false
+        } else if (function !is JSFunctionProperty && function !is TypeScriptFunctionSignature
+                && function !is TypeScriptFunctionType) {
+            parent !is JSClass
+        } else {
+            false
+        }
+    }
+
+    protected fun appendAttrList(owner: JSAttributeListOwner, result: StringBuilder) {
+        val attributeList = owner.attributeList
+        if (attributeList != null) {
+            val type = attributeList.accessType
+            var visibilityOrExportPart: String? = null
+            val jsClass = JSUtils.getMemberContainingClass(owner)
+            if (jsClass != null) {
+                visibilityOrExportPart = formatVisibility(owner, attributeList, type)
+            } else if (owner is JSQualifiedNamedElement) {
+                val exportScope = ES6PsiUtil.getExportScope(owner)
+                if (exportScope is TypeScriptModule || ES6PsiUtil.isExternalModule(exportScope)) {
+                    if ((owner as JSQualifiedNamedElement).isExported) {
+                        visibilityOrExportPart = "export"
+                    } else if (ES6ImportHandler.isExportedWithDefault(owner)) {
+                        visibilityOrExportPart = "export default"
+                    }
+                }
+            }
+            if (visibilityOrExportPart != null) {
+                result.append(visibilityOrExportPart)
+                result.append(" ")
+            }
+            appendPlainModifierList(attributeList, result)
+        }
+    }
+
+    protected fun appendPlainModifierList(attributeList: JSAttributeList, result: StringBuilder) {
+        appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.ASYNC)
+        appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.STATIC)
+        appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.GENERATOR)
+    }
+
+    protected fun getVariableOrFieldType(variable: JSTypeDeclarationOwner): JSType? {
+        return JSShowTypeInfoAction.getTypeForDocumentation(variable)
+    }
+
+    protected fun appendType(context: PsiElement, typeText: String?, builder: StringBuilder) {
+        if (!StringUtil.isEmpty(typeText)) {
+            builder.append(JSSymbolPresentationProvider.getDefaultTypeSeparator(context)).append(typeText)
+        }
+    }
+
+    protected fun getClassQualifiedName(jsClass: JSClass, packageOrModule: String?): String? {
+        return if (!StringUtil.isEmpty(packageOrModule)) packageOrModule + "." + jsClass.name else jsClass.name
+    }
+
+    protected val isIncludeObjectInExtendsList: Boolean
+        get() {
+            return false
+        }
+
+    protected fun createQuickNavigateForJSElement(element: JSElement, originalElement: PsiElement, declaration: String,
+            kind: ObjectKind, jsDoc: Boolean): String? {
+        val qName = if (element is JSQualifiedNamedElement) element.qualifiedName else element.name
+        return if (StringUtil.isEmpty(qName)) {
+            null
+        } else {
+            val attributesAndDeclaration = StringBuilder()
+            if (element is JSAttributeListOwner) {
+                appendAttrList(element, attributesAndDeclaration)
+            }
+            attributesAndDeclaration.append(declaration)
+            var result = buildHtmlForJSElement(element, attributesAndDeclaration, qName!!, declaration.isNotEmpty())
+            val declared = getJSElementType(element, originalElement)
+            if (declared != null) {
+                val substitutor = getTypeSubstitutor(element, originalElement)
+                val narrowedType = getNarrowedType(originalElement, substitutor)
+                val builder = java.lang.StringBuilder()
+                val type = this.appendOptionality(element, declared, narrowedType, builder, originalElement)
+                this.appendTypeWithSeparatorForOwner(element, type, substitutor, builder, originalElement, true)
+                result += builder
+            }
+            if (jsDoc) result else buildResult(kind, result, element, originalElement)
+        }
+    }
+
+    protected fun getJSElementType(element: JSElement, originalElement: PsiElement): JSType? {
+        return if (element is JSTypeOwner) {
+            (element as JSTypeOwner).jsType
+        } else {
+            if (element is ES6ImportedBinding) {
+                val results = element.multiResolve(false)
+                if (results.size == 1) {
+                    val el = results[0].element
+                    if (el is JSExpression) {
+                        return JSResolveUtil.getElementJSType(el)
+                    }
+                }
+            }
+            null
         }
     }
 
@@ -965,7 +1303,7 @@ class BetterTSQuickNavigateBuilder {
                 val var2 = info.myPlaceholders.iterator()
                 while (var2.hasNext()) {
                     placeholder = var2.next()
-                    realHighlighting = placeholder.restoreText(realHighlighting)
+                    realHighlighting = placeholder.restoreText(realHighlighting)!!
                 }
             }
             return realHighlighting
@@ -1049,6 +1387,225 @@ class BetterTSQuickNavigateBuilder {
             } else {
                 null
             }
+        }
+
+        private fun buildHtmlForProperty(element: JSProperty, qName: String, typePart: CharSequence): String? {
+            return buildHtmlForVariableOrField(element, "", qName, false, typePart)
+        }
+
+        protected fun isFileNameRequired(element: PsiElement, originalElement: PsiElement): Boolean {
+            val elementFile = PsiUtilCore.getVirtualFile(element)
+            val originalFile = PsiUtilCore.getVirtualFile(originalElement)
+            return elementFile == null || elementFile != originalFile
+        }
+
+        fun buildHtmlForFunction(context: PsiElement, modifiers: CharSequence, qName: CharSequence,
+                hasFunctionKeyword: Boolean, parametersWithReturnType: CharSequence): String {
+            val prefix = if (hasFunctionKeyword) "" else "class Foo { "
+            val finalText = "$prefix$modifiers$\$Name$$$parametersWithReturnType"
+            val beforeNameLength = prefix.length + modifiers.length
+            val toHighlight = TextRange(beforeNameLength, beforeNameLength + "$\$Name$$".length)
+            return getQuickNavigateHtmlHighlighting(context, qName, prefix, finalText, toHighlight)
+        }
+
+        protected fun buildResult(kind: ObjectKind, objectText: String, element: PsiElement,
+                originalElement: PsiElement): String {
+            val needFileName = isFileNameRequired(element, originalElement)
+            return if (!needFileName) {
+                kind.toPrefix() + objectText
+            } else {
+                val psiFile = element.containingFile
+                val fileNameText = "(" + psiFile.name + ")"
+                val kindText = kind.toPrefix()
+                kindText + objectText + buildAdditionalInformationText(fileNameText)
+            }
+        }
+
+        private fun formatMemberAccess(parentQualifier: String?, unescapedName: String, separator: String): String {
+            var qName = ""
+            if (!StringUtil.isEmpty(parentQualifier)) {
+                qName = parentQualifier!!
+                if (!StringUtil.startsWithChar(unescapedName, '[')) {
+                    qName = parentQualifier + separator
+                }
+            }
+
+            qName += XmlStringUtil.escapeString(unescapedName)
+
+            return qName
+        }
+
+        fun buildHtmlForVariableOrField(owner: PsiElement, modifiers: CharSequence, escapedName: CharSequence,
+                hasVarPrefix: Boolean, typeAndInitializer: CharSequence): String {
+            val prefix = if (hasVarPrefix) "" else if (owner is JSParameter) "function f( " else "class { "
+            val finalText = "$prefix$modifiers$\$Name$$$typeAndInitializer"
+            val modifiersWithPrefixLength = modifiers.length + prefix.length
+            val toHighlight = TextRange(modifiersWithPrefixLength, modifiersWithPrefixLength + "$\$Name$$".length)
+            return getQuickNavigateHtmlHighlighting(owner, escapedName, prefix, finalText, toHighlight)
+        }
+
+        fun getQuickNavigateHtmlHighlighting(owner: PsiElement, escapedName: CharSequence, prefixToExclude: String,
+                finalText: String, toHighlight: TextRange?): String {
+            var result = if (ApplicationManager.getApplication().isUnitTestMode) {
+                null
+            } else {
+                BetterTSHtmlHighlightingUtil.tryGetHtmlHighlighting(owner, finalText, toHighlight,
+                        prefixToExclude.length,
+                        finalText.length)
+            }
+            result = result?.toString()?.replace("font-style:italic;", "")
+                    ?: XmlStringUtil.escapeString(finalText.substring(prefixToExclude.length), false)
+
+            return result.toString().replace("$\$Name$$", escapedName.toString())
+        }
+
+        private fun buildAdditionalInformationText(text: String): String {
+            return if (StringUtil.isEmpty(text)) {
+                ""
+            } else {
+                val color = CodeInsightColors.NOT_USED_ELEMENT_ATTRIBUTES.defaultAttributes.foregroundColor
+                val result = java.lang.StringBuilder()
+                result.append(" <span")
+                result.append(" style=\"")
+                val font = StartupUiUtil.getLabelFont()
+                if (!ApplicationManager.getApplication().isUnitTestMode) {
+                    if (font != null) {
+                        result.append("font-size:").append(font.size).append("pt").append(";")
+                    }
+                    if (color != null) {
+                        result.append("color:").append(ColorUtil.toHex(color)).append(";")
+                    }
+                }
+                result.append("\">")
+                result.append(text)
+                result.append("</span>")
+                result.toString()
+            }
+        }
+
+        private fun buildHtmlForClass(jsClass: JSClass, attributesAndKeyword: CharSequence, qName: String,
+                extendsImplements: CharSequence): String {
+            val finalText = "$attributesAndKeyword$\$Name$$$extendsImplements"
+            val range = TextRange(attributesAndKeyword.length, attributesAndKeyword.length + "$\$Name$$".length)
+            return getQuickNavigateHtmlHighlighting(jsClass, qName, "", finalText, range)
+        }
+
+        private fun checkAndGetXmlAttributeQuickNavigate(element: PsiElement): String? {
+            var xmlAttributeDoc: String? = null
+            val xmlAttribute = if (element.parent is XmlAttribute) {
+                element.parent
+            } else if (element.parent is XmlAttributeValue && element.parent.parent is XmlAttribute) {
+                element.parent.parent
+            } else {
+                null
+            }
+            if (xmlAttribute != null) {
+                val value = StringUtil.unquoteString(StringUtil.notNullize((xmlAttribute as XmlAttribute).value))
+                xmlAttributeDoc = "${xmlAttribute.name} $value"
+            }
+
+            return xmlAttributeDoc
+        }
+
+        private fun expandTypeForPresentation(type: JSType, nested: Boolean): JSType {
+            return if (type is JSEvaluableType || type is JSUnionOrIntersectionType || type is JSGenericTypeImpl
+                    || (type is JSTypeImpl && type.jsTypedef is JSEvaluableType)) {
+                if (nested) {
+                    type.substitute()
+                } else {
+                    simplifyGenericArguments(type.substitute())
+                }
+            } else {
+                type
+            }
+        }
+
+        private fun simplifyGenericArguments(type: JSType): JSType {
+            return if (type is JSGenericTypeImpl) {
+                val nested = ContainerUtil.map(type.arguments) { el ->
+                    expandTypeForPresentation(el, true)
+                }
+                JSGenericTypeImpl(type.getSource(), type.type, nested)
+            } else {
+                type
+            }
+        }
+
+        private fun generateReferenceTargetList(implementsList: JSReferenceList?, packageName: String): String? {
+            return if (implementsList == null) {
+                null
+            } else {
+                var result: StringBuilder? = null
+                val referenceExpressionTexts = implementsList.referenceTexts
+                val var5 = referenceExpressionTexts.size
+                for (var6 in 0 until var5) {
+                    var refExprText = referenceExpressionTexts[var6]
+                    refExprText = JSImportHandlingUtil.resolveTypeName(refExprText, implementsList)
+                    if (result == null) {
+                        result = StringBuilder()
+                    } else {
+                        result.append(", ")
+                    }
+                    refExprText = StringUtil.notNullize(refExprText)
+                    val referencedPackageName = StringUtil.getPackageName(refExprText)
+                    result.append(if (referencedPackageName == packageName) {
+                        refExprText.substring(refExprText.lastIndexOf(46.toChar()) + 1)
+                    } else {
+                        refExprText
+                    })
+                }
+                result?.toString()
+            }
+        }
+
+        protected fun appendModifierWithSpace(result: StringBuilder, attributeList: JSAttributeList,
+                modifier: JSAttributeList.ModifierType) {
+            if (attributeList.hasModifier(modifier)) {
+                result.append(modifier.keyword).append(" ")
+            }
+        }
+
+        private fun buildHtmlForJSElement(element: JSElement, prefix: CharSequence, qName: String,
+                hasDeclaration: Boolean): String {
+            return if (hasDeclaration) {
+                val finalText = "$prefix$\$Name$$"
+                val range = TextRange(prefix.length, prefix.length + "$\$Name$$".length)
+                getQuickNavigateHtmlHighlighting(element, qName, "", finalText, range)
+            } else {
+                "" + prefix + buildHtmlForName(element, qName)
+            }
+        }
+
+        private fun buildHtmlForName(element: JSElement, name: String): String {
+            val result = if (ApplicationManager.getApplication().isUnitTestMode) {
+                null
+            } else BetterTSHtmlHighlightingUtil.tryGetHtmlHighlightingForName(element, name)
+            return result ?: XmlStringUtil.escapeString(name, false)
+        }
+
+        @Contract("!null->!null")
+        fun getOriginalElementOrParentIfLeaf(originalElement: PsiElement?): PsiElement? {
+            if (originalElement is LeafPsiElement) {
+                val file = originalElement.getContainingFile()
+                val offset = originalElement.startOffset
+                var candidate = originalElement
+                var node = originalElement.getNode()
+                if (offset > 0 && !isIdentifier(node!!)) {
+                    candidate = file.findElementAt(offset - 1)
+                    if (candidate != null) {
+                        node = candidate.node
+                    }
+                }
+                if (candidate != null && isIdentifier(node!!)) {
+                    return candidate.parent
+                }
+            }
+
+            return originalElement
+        }
+
+        private fun isIdentifier(node: ASTNode): Boolean {
+            return JSKeywordSets.IDENTIFIER_NAMES.contains(node.elementType)
         }
 
     }

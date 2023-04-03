@@ -2,8 +2,6 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
 import com.intellij.lang.javascript.JavaScriptBundle
-import com.intellij.lang.javascript.documentation.JSDocumentationProvider
-import com.intellij.lang.javascript.documentation.JSDocumentationProvider.LinkedDocCollector
 import com.intellij.lang.javascript.psi.JSFunctionItem
 import com.intellij.lang.javascript.psi.impl.JSFunctionImpl
 import com.intellij.openapi.util.Pair
@@ -16,7 +14,7 @@ class BetterTSDocMethodInfoPrinter(builder: BetterTSDocMethodInfoBuilder, privat
 
     init {
         if (builder.returnInfo.jsType == null) {
-            builder.returnInfo.jsType = JSFunctionImpl.getReturnTypeInContext(functionItem, null)
+            builder.returnInfo.jsType = JSFunctionImpl.getReturnTypeInContext(myFunctionItem, null)
         }
     }
 
@@ -25,20 +23,20 @@ class BetterTSDocMethodInfoPrinter(builder: BetterTSDocMethodInfoBuilder, privat
         if (DialectDetector.isTypeScript(myFunctionItem)) {
             val signatures = provider.getOverloads(myFunctionItem)
             if (signatures.size > 1) {
-                val results = ArrayList<PsiElement?>()
+                val results = ArrayList<PsiElement>()
                 results.add(myFunctionItem)
                 val var5 = signatures.iterator()
                 while (var5.hasNext()) {
-                    val signature = var5.next() as JSFunctionItem
+                    val signature = var5.next()
                     if (signature !== myFunctionItem) {
                         results.add(signature)
-                        if (results.size > 5) {
+                        if (results.size > OVERLOADS_LIMIT) {
                             break
                         }
                     }
                 }
                 Objects.requireNonNull(provider)
-                val collector = LinkedDocCollector(provider, contextElement, Pair(myFunctionItem, ""), results)
+                val collector = provider.LinkedDocCollector(contextElement!!, Pair(myFunctionItem, ""), results)
                 builder.append("<div class='content'>")
                 builder.append("<p>")
                 builder.append(collector.getLinks())

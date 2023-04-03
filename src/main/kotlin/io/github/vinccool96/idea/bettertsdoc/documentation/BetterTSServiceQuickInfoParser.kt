@@ -1,7 +1,5 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil.TextPlaceholder
 import com.intellij.lang.typescript.compiler.TypeScriptService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.ControlFlowException
@@ -12,6 +10,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiUtilCore
 import com.intellij.util.containers.ContainerUtil
+import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSHtmlHighlightingUtil.TextPlaceholder
 import java.util.concurrent.Future
 
 object BetterTSServiceQuickInfoParser {
@@ -255,7 +254,7 @@ object BetterTSServiceQuickInfoParser {
                             val toReplace = currentString.substring(threeDots, skipped)
                             ++counter
                             val holderText = "$\$Type$\$Srv" + counter + "_" + this.hashCode()
-                            val holder = JSHtmlHighlightingUtil.createSimpleHolder(toReplace, holderText)
+                            val holder = BetterTSHtmlHighlightingUtil.createSimpleHolder(toReplace, holderText)
                             newRest.append(holderText)
                             myPlaceholders.add(holder)
                             currentString = currentString.substring(skipped)
@@ -288,7 +287,7 @@ object BetterTSServiceQuickInfoParser {
         private fun addHolderForPrefix(currentString: String, newRest: StringBuilder, offset: Int, counter: Int) {
             val holderText = "$\$Type$\$Srv" + counter + "_" + this.hashCode()
             val toReplace = currentString.substring(offset, offset + PREFIX.length)
-            val holder = JSHtmlHighlightingUtil.createSimpleHolder(toReplace, holderText)
+            val holder = BetterTSHtmlHighlightingUtil.createSimpleHolder(toReplace, holderText)
             newRest.append(currentString, 0, offset)
             newRest.append(holder.holderText)
             myPlaceholders.add(holder)

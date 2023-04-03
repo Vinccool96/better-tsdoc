@@ -131,7 +131,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                 if (declaration != null) {
                     startNamedSection("Alias for:", result)
                     result.append("<td valign='top'>")
-                    val text = JSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(declaration, myElement, false)
+                    val text = BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(declaration, myElement, false)
                     appendSingleNamedDescriptionSection(text, "", result)
                     result.append("</td>")
                     val expanded = JSTypeUtils.unwrapType(declaration.substitute())
@@ -141,7 +141,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                             startNamedSection("Initial type:", result)
                             result.append("<td valign='top'>")
                             val initialType =
-                                    JSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(expanded, myElement, false)
+                                    BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(expanded, myElement, false)
                             appendSingleNamedDescriptionSection(initialType, "", result)
                             result.append("</td>")
                         }
@@ -149,7 +149,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                         if (!completelyExpanded.isEquivalentTo(expanded, null)) {
                             startNamedSection("Expanded:", result)
                             result.append("<td valign='top'>")
-                            val recordText = JSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(completelyExpanded,
+                            val recordText = BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(completelyExpanded,
                                     myElement, false)
                             appendSingleNamedDescriptionSection(recordText, "", result)
                             result.append("</td>")
@@ -199,7 +199,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                         }
                     }
                 }
-                result.append(JSHtmlHighlightingUtil.getElementHtmlHighlighting(myElement, nameToUse, jsType))
+                result.append(BetterTSHtmlHighlightingUtil.getElementHtmlHighlighting(myElement, nameToUse, jsType))
             }
             result.append("</pre></div>")
         }
@@ -327,7 +327,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
             builder.append(description)
         }
 
-        protected fun buildCurrentOrDefaultValue(content: String, color: Boolean, isDefaultValue: Boolean,
+        fun buildCurrentOrDefaultValue(content: String, color: Boolean, isDefaultValue: Boolean,
                 originalText: String?, needSection: Boolean): String {
             val realContent = if (color) {
                 "<code style='background-color:#$content; color: #${contrastColor(content)}'>$originalText</code>"

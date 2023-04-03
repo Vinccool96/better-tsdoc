@@ -30,7 +30,7 @@ class BetterTSExampleDocBuilderInfo(val id: String, private val myText: String?,
         }
 
         val text = trimRawDescription
-        return JSHtmlHighlightingUtil.tryGetHtmlHighlighting(myContext, text, null, 0, text.length)
+        return BetterTSHtmlHighlightingUtil.tryGetHtmlHighlighting(myContext, text, null, 0, text.length)
     }
 
     private val simpleExampleContent: String

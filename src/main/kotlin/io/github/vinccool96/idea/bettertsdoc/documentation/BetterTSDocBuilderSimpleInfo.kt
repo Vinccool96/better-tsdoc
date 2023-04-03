@@ -183,7 +183,7 @@ open class BetterTSDocBuilderSimpleInfo {
     fun getTypeString(context: PsiElement?): CharSequence {
         jsType = if (jsType != null && context != null && !DumbService.isDumb(
                         context.project)) jsType!!.substitute() else jsType
-        return JSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(jsType, context, hasFiredEvents)
+        return BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(jsType, context, hasFiredEvents)
     }
 
     val hasType: Boolean

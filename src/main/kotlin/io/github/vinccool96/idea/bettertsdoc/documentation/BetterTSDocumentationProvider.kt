@@ -190,7 +190,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
 
         var resolve: PsiElement?
         if (_element is JSExpression && _element !is JSQualifiedNamedElement) {
-            val candidate = JSQuickNavigateBuilder.getOriginalElementOrParentIfLeaf(originalElement)
+            val candidate = BetterTSQuickNavigateBuilder.getOriginalElementOrParentIfLeaf(originalElement)
             resolve = candidate
             if (candidate is JSReferenceExpression) {
                 resolve = candidate.resolve()
