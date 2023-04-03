@@ -18,8 +18,8 @@ class BetterTSDocMethodInfoPrinter(builder: BetterTSDocMethodInfoBuilder, privat
         }
     }
 
-    override fun appendDoc(builder: StringBuilder, provider: BetterTSDocumentationProvider) {
-        super.appendDoc(builder, provider)
+    override fun appendDoc(result: StringBuilder, provider: BetterTSDocumentationProvider) {
+        super.appendDoc(result, provider)
         if (DialectDetector.isTypeScript(myFunctionItem)) {
             val signatures = provider.getOverloads(myFunctionItem)
             if (signatures.size > 1) {
@@ -37,17 +37,17 @@ class BetterTSDocMethodInfoPrinter(builder: BetterTSDocMethodInfoBuilder, privat
                 }
                 Objects.requireNonNull(provider)
                 val collector = provider.LinkedDocCollector(contextElement!!, Pair(myFunctionItem, ""), results)
-                builder.append("<div class='content'>")
-                builder.append("<p>")
-                builder.append(collector.getLinks())
+                result.append("<div class='content'>")
+                result.append("<p>")
+                result.append(collector.getLinks())
                 if (results.size != signatures.size) {
                     val count = signatures.size - results.size
                     val overloadsText = JavaScriptBundle.message(
                             if (count == 1) "js.documentation.more.overload" else "js.documentation.more.overloads",
                             *arrayOf<Any>(count))
-                    builder.append(", <br> ").append(overloadsText)
+                    result.append(", <br> ").append(overloadsText)
                 }
-                builder.append("</div>")
+                result.append("</div>")
             }
         }
     }

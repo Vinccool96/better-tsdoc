@@ -2,7 +2,6 @@ package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.lang.javascript.index.JSItemPresentation
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
@@ -131,8 +130,9 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                 if (declaration != null) {
                     startNamedSection("Alias for:", result)
                     result.append("<td valign='top'>")
-                    val text = BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(declaration, myElement, false)
-                    appendSingleNamedDescriptionSection(text, "", result)
+                    val realText =
+                            BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(declaration, myElement, false)
+                    appendSingleNamedDescriptionSection(realText, "", result)
                     result.append("</td>")
                     val expanded = JSTypeUtils.unwrapType(declaration.substitute())
                     if (!expanded.isEquivalentTo(myBuilder.jsType, null)) {
@@ -141,7 +141,8 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                             startNamedSection("Initial type:", result)
                             result.append("<td valign='top'>")
                             val initialType =
-                                    BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(expanded, myElement, false)
+                                    BetterTSHtmlHighlightingUtil.getTypeWithLinksHtmlHighlighting(expanded, myElement,
+                                            false)
                             appendSingleNamedDescriptionSection(initialType, "", result)
                             result.append("</td>")
                         }

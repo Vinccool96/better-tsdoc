@@ -1,13 +1,12 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
-import com.intellij.lang.javascript.documentation.*
 import com.intellij.psi.PsiElement
 
 open class BetterTSDocSymbolInfoPrinter<T : BetterTSDocSymbolInfoBuilder>(builder: T, element: PsiElement,
         contextElement: PsiElement?, canBeNamed: Boolean) : BetterTSDocSimpleInfoPrinter<T>(builder,
         element, contextElement, canBeNamed) {
 
-    protected val mySeeAlsoPrinter = JSDocSeeAlsoPrinter(builder.mySeeAlsoTexts, myElement)
+    protected val mySeeAlsoPrinter = BetterTSDocSeeAlsoPrinter(builder.mySeeAlsoTexts, myElement)
 
     override fun appendInnerSections(result: StringBuilder, provider: BetterTSDocumentationProvider,
             hasDefinition: Boolean) {

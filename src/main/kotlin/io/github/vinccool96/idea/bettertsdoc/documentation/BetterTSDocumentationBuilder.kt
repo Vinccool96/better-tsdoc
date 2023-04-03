@@ -40,6 +40,7 @@ import java.util.*
 import java.util.concurrent.atomic.AtomicReference
 import java.util.regex.Pattern
 import kotlin.collections.ArrayList
+import kotlin.collections.Collection
 import kotlin.collections.HashSet
 import kotlin.collections.Iterator
 import kotlin.collections.LinkedHashMap
@@ -47,8 +48,8 @@ import kotlin.collections.MutableMap
 import kotlin.collections.MutableSet
 import kotlin.collections.component1
 import kotlin.collections.component2
-import kotlin.collections.listOf
 import kotlin.collections.set
+import kotlin.collections.toList
 
 class BetterTSDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
         private val myProvider: BetterTSDocumentationProvider) : JSDocumentationProcessor {
@@ -251,149 +252,168 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             myTargetInfo.appendBlockDescription(remainingLineContent)
             true
         } else {
-            val namedItem =
-                    if (function == null && myElement is JSPsiElementBase) myElement as JSPsiElementBase else null
+            val namedItem = if (function == null && myElement is JSPsiElementBase) myElement else null
             val typeSource = JSTypeSourceFactory.createTypeSource(myElement, true)
             if (metaDocType != MetaDocType.PRIVATE && metaDocType != MetaDocType.PUBLIC && metaDocType != MetaDocType.PROTECTED && metaDocType != MetaDocType.STATIC) {
-                if (metaDocType == MetaDocType.TYPE) {
-                    myTargetInfo.jsType = JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue, typeSource)
-                    true
-                } else if (metaDocType == MetaDocType.FINAL) {
-                    myTargetInfo.finalAccess = "final"
-                    true
-                } else if (metaDocType == MetaDocType.REQUIRES) {
-                    true
-                } else if (metaDocType == MetaDocType.NAMESPACE) {
-                    myTargetInfo.namespace = matchName
-                    true
-                } else if (metaDocType == MetaDocType.INHERIT_DOC) {
-                    seenInheritDoc = true
-                    true
-                } else {
-                    var parameterInfo: BetterTSDocParameterInfoBuilder
-                    if (metaDocType == MetaDocType.PROPERTY) {
-                        val matchesElement =
-                                namedItem != null && namedItem !is JSImplicitElement && matchName == namedItem.name
-                        if (matchName != null && !matchesElement) {
-                            val qualifiedName = JSQualifiedNameImpl.fromQualifiedName(matchName)
-                            if (myTargetInfo.myProperties == null) {
-                                myTargetInfo.myProperties = LinkedHashMap()
-                            }
-                            parameterInfo = BetterTSDocParameterInfoBuilder()
-                            if (matchValue != null) {
-                                parameterInfo.jsType =
-                                        JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue, typeSource)
-                            }
-                            if (qualifiedName.parent != null) {
-                                parameterInfo.namespace = qualifiedName.parent!!.qualifiedName
-                            }
-                            parameterInfo.appendDescription(remainingLineContent)
-                            myTargetInfo.myProperties!![qualifiedName] = parameterInfo
-                            updateInfoForNewLines(parameterInfo)
-                        }
-                    } else if (metaDocType == MetaDocType.TYPEDEF) {
-                        myTargetInfo.jsType =
-                                JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue, typeSource)
+                when (metaDocType) {
+                    MetaDocType.TYPE -> {
+                        myTargetInfo.jsType = JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue,
+                                typeSource)
+                        true
                     }
-                    val methodGenerationInfo = myTargetInfo
-                    val returnInfo: BetterTSDocBuilderSimpleInfo
-                    if (metaDocType != MetaDocType.THROWS && metaDocType != MetaDocType.FIRES) {
-                        if (metaDocType != MetaDocType.CONSTRUCTOR && metaDocType != MetaDocType.METHOD) {
-                            if (metaDocType == MetaDocType.PARAMETER_PROPERTY) {
-                                var fieldName: String?
-                                if (matchName != null && matchName.indexOf(46.toChar()) > 0) {
-                                    fieldName = matchName.substring(0, matchName.indexOf("."))
-                                    currentParameterInfo = methodGenerationInfo.getInfoForParameterName(fieldName)
+
+                    MetaDocType.FINAL -> {
+                        myTargetInfo.finalAccess = "final"
+                        true
+                    }
+
+                    MetaDocType.REQUIRES -> {
+                        true
+                    }
+
+                    MetaDocType.NAMESPACE -> {
+                        myTargetInfo.namespace = matchName
+                        true
+                    }
+
+                    MetaDocType.INHERIT_DOC -> {
+                        seenInheritDoc = true
+                        true
+                    }
+
+                    else -> {
+                        var parameterInfo: BetterTSDocParameterInfoBuilder
+                        if (metaDocType == MetaDocType.PROPERTY) {
+                            val matchesElement =
+                                    namedItem != null && namedItem !is JSImplicitElement && matchName == namedItem.name
+                            if (matchName != null && !matchesElement) {
+                                val qualifiedName = JSQualifiedNameImpl.fromQualifiedName(matchName)
+                                if (myTargetInfo.myProperties == null) {
+                                    myTargetInfo.myProperties = LinkedHashMap()
                                 }
-                                if (currentParameterInfo != null) {
-                                    if (currentParameterInfo!!.optionsMap == null) {
-                                        currentParameterInfo!!.optionsMap = LinkedHashMap()
+                                parameterInfo = BetterTSDocParameterInfoBuilder()
+                                if (matchValue != null) {
+                                    parameterInfo.jsType =
+                                            JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue, typeSource)
+                                }
+                                if (qualifiedName.parent != null) {
+                                    parameterInfo.namespace = qualifiedName.parent!!.qualifiedName
+                                }
+                                parameterInfo.appendDescription(remainingLineContent)
+                                myTargetInfo.myProperties!![qualifiedName] = parameterInfo
+                                updateInfoForNewLines(parameterInfo)
+                            }
+                        } else if (metaDocType == MetaDocType.TYPEDEF) {
+                            myTargetInfo.jsType =
+                                    JSTypeParser.createTypeFromJSDoc(myElement.project, matchValue, typeSource)
+                        }
+                        val methodGenerationInfo = myTargetInfo
+                        val returnInfo: BetterTSDocBuilderSimpleInfo
+                        if (metaDocType != MetaDocType.THROWS && metaDocType != MetaDocType.FIRES) {
+                            if (metaDocType != MetaDocType.CONSTRUCTOR && metaDocType != MetaDocType.METHOD) {
+                                if (metaDocType == MetaDocType.PARAMETER_PROPERTY) {
+                                    var fieldName: String?
+                                    if (matchName != null && matchName.indexOf(46.toChar()) > 0) {
+                                        fieldName = matchName.substring(0, matchName.indexOf("."))
+                                        currentParameterInfo = methodGenerationInfo.getInfoForParameterName(fieldName)
                                     }
-                                    fieldName = getFieldName(matchName)
-                                    if (fieldName != null) {
-                                        parameterInfo = BetterTSDocParameterInfoBuilder()
-                                        val parameterType =
-                                                JSTypeParser.createParameterType(myElement.project, matchValue,
-                                                        typeSource)
-                                        if (parameterType != null) {
-                                            parameterInfo.updateFromDecorator(parameterType)
+                                    if (currentParameterInfo != null) {
+                                        if (currentParameterInfo!!.optionsMap == null) {
+                                            currentParameterInfo!!.optionsMap = LinkedHashMap()
                                         }
-                                        parameterInfo.appendDescription(remainingLineContent)
-                                        currentParameterInfo!!.optionsMap!![fieldName] = parameterInfo
-                                        updateInfoForNewLines(parameterInfo)
+                                        fieldName = getFieldName(matchName)
+                                        if (fieldName != null) {
+                                            parameterInfo = BetterTSDocParameterInfoBuilder()
+                                            val parameterType =
+                                                    JSTypeParser.createParameterType(myElement.project, matchValue,
+                                                            typeSource)
+                                            if (parameterType != null) {
+                                                parameterInfo.updateFromDecorator(parameterType)
+                                            }
+                                            parameterInfo.appendDescription(remainingLineContent)
+                                            currentParameterInfo!!.optionsMap!![fieldName] = parameterInfo
+                                            updateInfoForNewLines(parameterInfo)
+                                        }
+                                    }
+                                } else {
+                                    var addReturnTypeInfoFromComments: Boolean
+                                    if (metaDocType != MetaDocType.PARAMETER) {
+                                        if (metaDocType == MetaDocType.RETURN) {
+                                            returnInfo = methodGenerationInfo.returnInfo
+                                            addReturnTypeInfoFromComments = true
+                                            if (function is JSFunction) {
+                                                val holder = DialectDetector.dialectOfElement(function)
+                                                var typeFromCommentsFunction: JSType? = null
+                                                if (holder != null && (holder.isTypeScript || holder.isECMA4)
+                                                        && JSPsiImplUtils.getTypeFromDeclaration(function).also {
+                                                            typeFromCommentsFunction = it
+                                                        } != null
+                                                        && typeFromCommentsFunction!!.typeText != matchValue) {
+                                                    addReturnTypeInfoFromComments = false
+                                                }
+                                            }
+                                            if (matchValue != null) {
+                                                if (addReturnTypeInfoFromComments) {
+                                                    if (function == null || !function.isSetProperty) {
+                                                        methodGenerationInfo.returnInfo.jsType =
+                                                                JSTypeParser.createTypeFromJSDoc(
+                                                                        myElement.project, matchValue, typeSource)
+                                                    }
+                                                } else {
+                                                    returnInfo.appendDescription("$matchValue ")
+                                                }
+                                            }
+                                            if (remainingLineContent != null) {
+                                                returnInfo.appendDescription(remainingLineContent)
+                                            }
+                                            myInfoForNewLines = returnInfo
+                                        }
+                                    } else {
+                                        val elementMatchesParameter = function == null && matchName != null
+                                                && myElement is JSImplicitElement && matchName == myElement.name
+                                        addReturnTypeInfoFromComments =
+                                                patternMatched == JSDocumentationUtils.ourDojoParametersPattern
+                                                        .pattern() && (function == null || matchName == null
+                                                        || !ContainerUtil.exists(function.parameterVariables) {
+                                                    matchName == it.name
+                                                })
+                                        if (elementMatchesParameter || addReturnTypeInfoFromComments) {
+                                            onCommentLine(line)
+                                            return true
+                                        }
+                                        val info = methodGenerationInfo.getInfoForParameterName(matchName)
+                                        info.docName = matchName
+                                        info.appendDescription(remainingLineContent)
+                                        currentParameterInfo = info
+                                        updateInfoForNewLines(info)
                                     }
                                 }
                             } else {
-                                var addReturnTypeInfoFromComments: Boolean
-                                if (metaDocType != MetaDocType.PARAMETER) {
-                                    if (metaDocType == MetaDocType.RETURN) {
-                                        returnInfo = methodGenerationInfo.returnInfo
-                                        addReturnTypeInfoFromComments = true
-                                        if (function is JSFunction) {
-                                            val holder = DialectDetector.dialectOfElement(function)
-                                            var typeFromCommentsFunction: JSType? = null
-                                            if (holder != null && (holder.isTypeScript || holder.isECMA4)
-                                                    && JSPsiImplUtils.getTypeFromDeclaration(function).also {
-                                                        typeFromCommentsFunction = it
-                                                    } != null && typeFromCommentsFunction!!.typeText != matchValue) {
-                                                addReturnTypeInfoFromComments = false
-                                            }
-                                        }
-                                        if (matchValue != null) {
-                                            if (addReturnTypeInfoFromComments) {
-                                                if (function == null || !function.isSetProperty) {
-                                                    methodGenerationInfo.returnInfo.jsType =
-                                                            JSTypeParser.createTypeFromJSDoc(
-                                                                    myElement.project, matchValue, typeSource)
-                                                }
-                                            } else {
-                                                returnInfo.appendDescription("$matchValue ")
-                                            }
-                                        }
-                                        if (remainingLineContent != null) {
-                                            returnInfo.appendDescription(remainingLineContent)
-                                        }
-                                        myInfoForNewLines = returnInfo
-                                    }
-                                } else {
-                                    val elementMatchesParameter =
-                                            function == null && matchName != null && myElement is JSImplicitElement && matchName == (myElement as JSImplicitElement).name
-                                    addReturnTypeInfoFromComments =
-                                            patternMatched == JSDocumentationUtils.ourDojoParametersPattern.pattern() && (function == null || matchName == null || !ContainerUtil.exists(
-                                                    function.parameterVariables
-                                            ) { it: JSParameterItem -> matchName == it.name })
-                                    if (elementMatchesParameter || addReturnTypeInfoFromComments) {
-                                        onCommentLine(line)
-                                        return true
-                                    }
-                                    val info = methodGenerationInfo.getInfoForParameterName(matchName)
-                                    info.docName = matchName
-                                    info.appendDescription(remainingLineContent)
-                                    currentParameterInfo = info
-                                    updateInfoForNewLines(info)
-                                }
+                                methodGenerationInfo.methodType = StringUtil.toLowerCase(metaDocType.name)
                             }
                         } else {
-                            methodGenerationInfo.methodType = StringUtil.toLowerCase(metaDocType.name)
-                        }
-                    } else {
-                        returnInfo = BetterTSDocBuilderSimpleInfo()
-                        val typeString = if (metaDocType == MetaDocType.THROWS) matchValue else matchName
-                        if (typeString != null) {
-                            if (metaDocType == MetaDocType.FIRES) {
-                                returnInfo.hasFiredEvents = true
+                            returnInfo = BetterTSDocBuilderSimpleInfo()
+                            val typeString = if (metaDocType == MetaDocType.THROWS) matchValue else matchName
+                            if (typeString != null) {
+                                if (metaDocType == MetaDocType.FIRES) {
+                                    returnInfo.hasFiredEvents = true
+                                }
+                                returnInfo.jsType =
+                                        JSTypeParser.createTypeFromJSDoc(myElement.project, typeString, typeSource)
                             }
-                            returnInfo.jsType =
-                                    JSTypeParser.createTypeFromJSDoc(myElement.project, typeString, typeSource)
+                            if (remainingLineContent != null) {
+                                returnInfo.appendDescription(remainingLineContent)
+                            }
+                            val infos = if (metaDocType == MetaDocType.THROWS) {
+                                methodGenerationInfo.throwsInfos
+                            } else {
+                                methodGenerationInfo.firesInfos
+                            }
+                            infos.add(returnInfo)
+                            myInfoForNewLines = returnInfo
                         }
-                        if (remainingLineContent != null) {
-                            returnInfo.appendDescription(remainingLineContent)
-                        }
-                        (if (metaDocType == MetaDocType.THROWS) methodGenerationInfo.throwsInfos else methodGenerationInfo.firesInfos).add(
-                                returnInfo)
-                        myInfoForNewLines = returnInfo
+                        true
                     }
-                    true
                 }
             } else {
                 val s = StringUtil.toLowerCase(metaDocType.name)
@@ -469,8 +489,11 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             processorRef.set(processor)
             processor.process(myElement as JSFunction)
         } else if (myElement is JSPsiElementBase) {
-            val members = if (myElement is JSClass) listOf<JSPsiElementBase>(
-                    *myElement.superClasses) else JSInheritanceUtil.findNearestOverriddenMembers(myElement, false)
+            val members: Collection<JSPsiElementBase> = if (myElement is JSClass) {
+                myElement.superClasses.toList()
+            } else {
+                JSInheritanceUtil.findNearestOverriddenMembers(myElement, false)
+            }
             val var7 = members.iterator()
             while (var7.hasNext()) {
                 val member = var7.next()

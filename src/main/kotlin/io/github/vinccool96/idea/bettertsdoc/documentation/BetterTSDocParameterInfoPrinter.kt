@@ -85,7 +85,7 @@ class BetterTSDocParameterInfoPrinter(private val context: PsiElement?, private 
             }
             optionsBuilder.append("</table>")
             val description: String = myBuilder.finalDescription
-            val i = description.indexOf("<tr><td valign='top' class='section'><p>See also:</td><td valign='top'>")
+            val i = description.indexOf(BetterTSDocSeeAlsoPrinter.SEE_ALSO_DOC_TOKEN)
             if (i != -1) {
                 StringBuilder(description).insert(i, optionsBuilder).toString()
             } else {

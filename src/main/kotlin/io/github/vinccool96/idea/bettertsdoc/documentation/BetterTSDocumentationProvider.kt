@@ -15,7 +15,6 @@ import com.intellij.lang.ecmascript6.resolve.ES6PsiUtil
 import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.documentation.JSDocumentationUtils
-import com.intellij.lang.javascript.documentation.JSQuickNavigateBuilder
 import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
 import com.intellij.lang.javascript.library.JSLibraryManager
 import com.intellij.lang.javascript.presentable.JSFormatUtil
@@ -646,7 +645,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    protected fun appendSeeAlsoLink(linkPart: String, displayText: String, seeAlsoValue: String, element: PsiElement,
+    fun appendSeeAlsoLink(linkPart: String, displayText: String, seeAlsoValue: String, element: PsiElement,
             result: StringBuilder): Boolean {
         return if (!JSDocumentationUtils.NAMEPATH_PATTERN.matcher(seeAlsoValue).matches()) {
             false
@@ -1179,9 +1178,11 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                     while (el != null) {
                         if (el !is PsiWhiteSpace && el !is PsiComment) {
                             if (el is JSFunction) {
-                                val prevFunction = el as JSFunction
+                                val prevFunction = el
                                 val name = prevFunction.name
-                                if (name != null && name == psiElement.name && (prevFunction.isGetProperty && psiElement.isSetProperty || prevFunction.isSetProperty && psiElement.isGetProperty)) {
+                                if (name != null && (name == psiElement.name)
+                                        && ((prevFunction.isGetProperty && psiElement.isSetProperty)
+                                                || (prevFunction.isSetProperty && psiElement.isGetProperty))) {
                                     doc = JSDocumentationUtils.findDocComment(prevFunction)
                                     if (doc != null) {
                                         return prevFunction
@@ -1269,14 +1270,14 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
 
         fun adjustResultFromServiceForDocumentation(element: PsiElement?): PsiElement? {
-            var element = element
-            if (element is LeafElement) {
-                element = element.parent
+            var realElement = element
+            if (realElement is LeafElement) {
+                realElement = realElement.parent
             }
-            if (element is JSReferenceExpression) {
-                element = element.getParent()
+            if (realElement is JSReferenceExpression) {
+                realElement = realElement.getParent()
             }
-            return element as? JSQualifiedNamedElement
+            return realElement as? JSQualifiedNamedElement
         }
 
     }
