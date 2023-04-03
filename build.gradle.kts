@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "1.8.0"
+    id("org.jetbrains.kotlin.jvm") version "1.8.20"
     id("org.jetbrains.intellij") version "1.13.3"
 }
 
@@ -55,8 +55,7 @@ tasks { // Set the JVM compatibility versions
     compileKotlin {
         kotlinOptions {
             jvmTarget = "17"
-            languageVersion = "1.7"
-            apiVersion = "1.7"
+            languageVersion = "1.8"
             freeCompilerArgs = listOf("-Xjvm-default=all")
         }
     }
