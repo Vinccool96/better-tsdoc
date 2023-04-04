@@ -5,7 +5,9 @@ import com.intellij.openapi.util.text.StringUtil
 class BetterTSDeprecatedDocBuilderInfo(val id: String, private val myText: String?) : BetterTSDocBuilderSimpleInfo() {
 
     fun generateDoc(): String {
-        return "<br/><span class='grayed'>Deprecated: " + convertMarkdownToHtml(StringUtil.trim(StringUtil.notNullize(myText))) + deprecatedContent + "</span><br/>"
+        return "<br/><span class='grayed'>Deprecated: " +
+                convertMarkdownToHtml(StringUtil.trim(StringUtil.notNullize(myText))) + deprecatedContent +
+                "</span><br/>"
     }
 
     private val deprecatedContent: String

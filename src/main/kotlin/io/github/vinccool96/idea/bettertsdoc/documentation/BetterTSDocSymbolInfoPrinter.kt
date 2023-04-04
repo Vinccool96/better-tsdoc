@@ -6,7 +6,7 @@ open class BetterTSDocSymbolInfoPrinter<T : BetterTSDocSymbolInfoBuilder>(builde
         contextElement: PsiElement?, canBeNamed: Boolean) : BetterTSDocSimpleInfoPrinter<T>(builder,
         element, contextElement, canBeNamed) {
 
-    protected val mySeeAlsoPrinter = BetterTSDocSeeAlsoPrinter(builder.mySeeAlsoTexts, myElement)
+    private val mySeeAlsoPrinter = BetterTSDocSeeAlsoPrinter(builder.mySeeAlsoTexts, myElement)
 
     override fun appendInnerSections(result: StringBuilder, provider: BetterTSDocumentationProvider,
             hasDefinition: Boolean) {

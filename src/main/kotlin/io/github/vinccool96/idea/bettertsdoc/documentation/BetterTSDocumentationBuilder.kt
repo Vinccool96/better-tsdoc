@@ -51,6 +51,7 @@ import kotlin.collections.component2
 import kotlin.collections.set
 import kotlin.collections.toList
 
+@Suppress("PrivatePropertyName")
 class BetterTSDocumentationBuilder(private val myElement: PsiElement, private val myContextElement: PsiElement?,
         private val myProvider: BetterTSDocumentationProvider) : JSDocumentationProcessor {
 
@@ -69,7 +70,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
 
     private var myNewLinesPendingCount = 0
 
-    var myPreInfo: BetterTSPreDocBuilderInfo? = null
+    private var myPreInfo: BetterTSPreDocBuilderInfo? = null
 
     private var seenPre: String? = null
 
@@ -162,13 +163,13 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         }
     }
 
-    fun replaceNewLinesAndAppendPreLine(line: String) {
+    private fun replaceNewLinesAndAppendPreLine(line: String) {
         assert(myPreInfo != null)
 
         myPreInfo!!.appendDescription(line)
     }
 
-    fun replaceTagsAndAppendInfoLine(line: String) {
+    private fun replaceTagsAndAppendInfoLine(line: String) {
         var realLine = line
         if (realLine.indexOf(60.toChar()) != -1) {
             realLine = replaceBrTagsWithNewLines(realLine)
@@ -430,7 +431,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         }
     }
 
-    fun isNestedDocType(metaDocType: MetaDocType, patternMatched: String): Boolean {
+    private fun isNestedDocType(metaDocType: MetaDocType, patternMatched: String): Boolean {
         return metaDocType == MetaDocType.PREVIOUS_IS_OPTIONAL || metaDocType == MetaDocType.PREVIOUS_IS_DEFAULT ||
                 (metaDocType == MetaDocType.PARAMETER &&
                         patternMatched != JSDocumentationUtils.ourDojoParametersPattern.pattern())
@@ -442,7 +443,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         }
     }
 
-    fun processOverriddenMembers() {
+    private fun processOverriddenMembers() {
         if (function != null) {
             val methodInfo = myTargetInfo
             val processorRef: AtomicReference<Processor<JSFunction>?> = AtomicReference()

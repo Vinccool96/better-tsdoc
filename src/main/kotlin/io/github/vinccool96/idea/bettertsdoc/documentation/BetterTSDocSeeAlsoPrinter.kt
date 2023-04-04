@@ -4,6 +4,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 
+@Suppress("HttpUrlsUsage")
 class BetterTSDocSeeAlsoPrinter(private val myTexts: List<String>, private val myElement: PsiElement) {
 
     fun appendDoc(result: StringBuilder, provider: BetterTSDocumentationProvider) {

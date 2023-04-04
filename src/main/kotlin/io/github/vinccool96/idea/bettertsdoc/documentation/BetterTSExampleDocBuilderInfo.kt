@@ -1,10 +1,9 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
-import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSPreDocBuilderInfo.Companion.OPEN_PRE
 import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSPreDocBuilderInfo.Companion.CLOSE_PRE
+import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSPreDocBuilderInfo.Companion.OPEN_PRE
 
 class BetterTSExampleDocBuilderInfo(val id: String, private val myText: String?, private val myContext: PsiElement?) :
         BetterTSDocBuilderSimpleInfo() {

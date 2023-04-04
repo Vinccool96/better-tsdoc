@@ -24,7 +24,7 @@ import java.util.function.Consumer
 open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builder: T, element: PsiElement,
         protected val contextElement: PsiElement?, canBeNamed: Boolean) {
 
-    protected val namedItem = if (element is JSPsiNamedElementBase && canBeNamed) element else null
+    private val namedItem = if (element is JSPsiNamedElementBase && canBeNamed) element else null
 
     protected val myElement: PsiElement = element
 
@@ -46,7 +46,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
     }
 
     @Nls
-    fun getRenderedDoc(provider: BetterTSDocumentationProvider): String? {
+    fun getRenderedDoc(provider: BetterTSDocumentationProvider): String {
         val result = StringBuilder()
         if (!this.appendMdnDoc(result, false)) {
             this.appendDescriptionsAndSections(result, provider, false)
@@ -63,7 +63,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
         result.append("</table>")
     }
 
-    protected fun appendMdnDoc(result: StringBuilder, hasDefinition: Boolean): Boolean {
+    private fun appendMdnDoc(result: StringBuilder, hasDefinition: Boolean): Boolean {
         val documentation = JSDocumentationUtils.getJsMdnDocumentation(myElement, contextElement)
         return if (documentation == null) {
             false
@@ -94,7 +94,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
                 var rawLocation = JSItemPresentation.getFileName(file, true, true, false)
                 rawLocation = StringUtil.trimEnd(StringUtil.trimStart(rawLocation, "("), ")")
                 val location = getLocationWithEllipsis(rawLocation, PATH_LENGTH)
-                if (!location.isEmpty()) {
+                if (location.isNotEmpty()) {
                     val sections = result.indexOf("<tr><td valign='top' class='section'><p>")
                     result.append("<tr><td valign='top'")
                     if (sections > 0) {
@@ -161,7 +161,8 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
             if (contextElement != null && contextElement !is JSImplicitElement) {
                 text = contextElement.text
                 if (text.startsWith("#") && text.length == 7) {
-                    result.append(buildCurrentOrDefaultValue(text.substring(1), true, false, text, true))
+                    result.append(buildCurrentOrDefaultValue(text.substring(1), color = true, isDefaultValue = false,
+                            originalText = text, needSection = true))
                 }
             }
         }

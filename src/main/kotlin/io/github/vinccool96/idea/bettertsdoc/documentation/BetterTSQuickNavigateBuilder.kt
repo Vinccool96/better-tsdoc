@@ -62,7 +62,7 @@ import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSHtmlHighlight
 import org.jetbrains.annotations.Contract
 import org.jetbrains.annotations.Nls
 
-@Suppress("UnstableApiUsage")
+@Suppress("UnstableApiUsage", "DEPRECATION", "SameParameterValue", "UNUSED_PARAMETER")
 class BetterTSQuickNavigateBuilder {
 
     fun getQuickNavigateInfoForNavigationElement(element: PsiElement, originalElement: PsiElement,
@@ -92,16 +92,22 @@ class BetterTSQuickNavigateBuilder {
             }
 
             FunctionCallType.JAVASCRIPT -> {
-                return if (element is TypeScriptModule) {
-                    val prefix = if (element.isInternal) "namespace " else "module "
-                    createQuickNavigateForJSElement(element, originalElement, prefix, ObjectKind.SIMPLE_DECLARATION,
-                            jsDoc)
-                } else if (element is ES6ImportExportDeclarationPart) {
-                    val kind = getKindForImport(element)
-                    createQuickNavigateForJSElement(element, originalElement, if (jsDoc) kind.toJSDocPrefix() else "",
-                            kind, jsDoc)
-                } else {
-                    getQuickNavigateInfoForNavigationElement(element, originalElement, jsDoc, FunctionCallType.JS)
+                return when (element) {
+                    is TypeScriptModule -> {
+                        val prefix = if (element.isInternal) "namespace " else "module "
+                        createQuickNavigateForJSElement(element, originalElement, prefix, ObjectKind.SIMPLE_DECLARATION,
+                                jsDoc)
+                    }
+
+                    is ES6ImportExportDeclarationPart -> {
+                        val kind = getKindForImport(element)
+                        createQuickNavigateForJSElement(element, originalElement,
+                                if (jsDoc) kind.toJSDocPrefix() else "", kind, jsDoc)
+                    }
+
+                    else -> {
+                        getQuickNavigateInfoForNavigationElement(element, originalElement, jsDoc, FunctionCallType.JS)
+                    }
                 }
             }
 
@@ -133,7 +139,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun getFunctionNameWithHtml(functionItem: JSFunctionItem, substitutor: JSTypeSubstitutor): String {
+    private fun getFunctionNameWithHtml(functionItem: JSFunctionItem, substitutor: JSTypeSubstitutor): String {
         return getFunctionNameWithHtml(functionItem, substitutor, FunctionCallType.TYPESCRIPT)
     }
 
@@ -187,7 +193,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun getFunctionDefinition(functionItem: JSFunctionItem, escapedName: String, substitutor: JSTypeSubstitutor,
+    private fun getFunctionDefinition(functionItem: JSFunctionItem, escapedName: String, substitutor: JSTypeSubstitutor,
             parameters: Collection<BetterTSDocParameterInfoPrinter>, returnInfo: BetterTSDocBuilderSimpleInfo,
             originalElement: PsiElement, jsDoc: Boolean): CharSequence {
         return getFunctionDefinition(functionItem, escapedName, substitutor, parameters, returnInfo, originalElement,
@@ -364,7 +370,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun appendOptionality(variableOrField: JSElement, declaredType: JSType?, narrowedType: JSType?,
+    private fun appendOptionality(variableOrField: JSElement, declaredType: JSType?, narrowedType: JSType?,
             builder: StringBuilder, originalElement: PsiElement): JSType? {
         return appendOptionality(variableOrField, declaredType, narrowedType, builder, originalElement,
                 FunctionCallType.TYPESCRIPT)
@@ -402,7 +408,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun appendTypeWithSeparatorForOwner(typeOwner: JSElement, toUse: JSType?, substitutor: JSTypeSubstitutor,
+    private fun appendTypeWithSeparatorForOwner(typeOwner: JSElement, toUse: JSType?, substitutor: JSTypeSubstitutor,
             builder: StringBuilder, originalElement: PsiElement, jsDoc: Boolean) {
         appendTypeWithSeparatorForOwner(typeOwner, toUse, substitutor, builder, originalElement, jsDoc,
                 FunctionCallType.TYPESCRIPT)
@@ -469,7 +475,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun appendVariableInitializer(variable: JSVariable, result: StringBuilder) {
+    private fun appendVariableInitializer(variable: JSVariable, result: StringBuilder) {
         appendVariableInitializer(variable, result, FunctionCallType.TYPESCRIPT)
     }
 
@@ -504,12 +510,13 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun appendClassExtendsAndImplements(jsClass: JSClass, originalElement: PsiElement,
+    private fun appendClassExtendsAndImplements(jsClass: JSClass, originalElement: PsiElement,
             packageNameOrEmptyString: String, result: StringBuilder) {
         appendGenerics(jsClass, originalElement, result)
         var extendsList = generateReferenceTargetList(jsClass.extendsList, packageNameOrEmptyString)
-        if (extendsList == null && isIncludeObjectInExtendsList && "Object" != jsClass.name) {
-            extendsList = "Object"
+        if (extendsList == null && isIncludeObjectInExtendsList
+                && BetterTSDocumentationProvider.OBJECT_NAME != jsClass.name) {
+            extendsList = BetterTSDocumentationProvider.OBJECT_NAME
         }
 
         if (extendsList != null) {
@@ -522,7 +529,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun getKindForImport(part: ES6ImportExportDeclarationPart): ObjectKind {
+    private fun getKindForImport(part: ES6ImportExportDeclarationPart): ObjectKind {
         return if (part is ES6ImportSpecifier) {
             ObjectKind.IMPORT_SPECIFIER
         } else if (part is ES6ImportedBinding) {
@@ -534,7 +541,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    fun getFieldOrVariableKind(variableOrField: JSFieldVariable): ObjectKind {
+    private fun getFieldOrVariableKind(variableOrField: JSFieldVariable): ObjectKind {
         return getFieldOrVariableKind(variableOrField, FunctionCallType.JAVASCRIPT)
     }
 
@@ -556,7 +563,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getTypeSubstitutor(candidate: JSElement, originalElement: PsiElement): JSTypeSubstitutor {
+    private fun getTypeSubstitutor(candidate: JSElement, originalElement: PsiElement): JSTypeSubstitutor {
         val element = getOriginalElementOrParentIfLeaf(originalElement)!!
         val isSourceElement = isElementFromTSSources(candidate, element)
         var typeSubstitutorTarget = candidate
@@ -568,7 +575,7 @@ class BetterTSQuickNavigateBuilder {
                 .getTypeSubstitutorForMember(typeSubstitutorTarget, element)
     }
 
-    protected fun appendClassAttributes(jsClass: JSClass, originalElement: PsiElement, packageOrModule: String?,
+    private fun appendClassAttributes(jsClass: JSClass, originalElement: PsiElement, packageOrModule: String?,
             result: StringBuilder) {
         appendClassAttributes(jsClass, originalElement, packageOrModule, result, FunctionCallType.JAVASCRIPT)
     }
@@ -604,7 +611,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getVarPrefix(variable: JSVariable): String {
+    private fun getVarPrefix(variable: JSVariable): String {
         return getVarPrefix(variable, FunctionCallType.JAVASCRIPT)
     }
 
@@ -626,7 +633,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getParentInfo(parent: PsiElement?, element: PsiNamedElement,
+    private fun getParentInfo(parent: PsiElement?, element: PsiNamedElement,
             substitutor: JSTypeSubstitutor): String? {
         return getParentInfo(parent, element, substitutor, FunctionCallType.JAVASCRIPT)
     }
@@ -643,7 +650,8 @@ class BetterTSQuickNavigateBuilder {
                 if (realParent is TypeScriptInterfaceClass) {
                     val generics = getGenerics(realParent, substitutor)
                     if (generics != null) {
-                        val className = StringUtil.notNullize((realParent as JSClass).qualifiedName, "default")
+                        val className = StringUtil.notNullize(realParent.qualifiedName,
+                                BetterTSDocumentationProvider.DEFAULT_CLASS_NAME)
                         return className + StringUtil.escapeXmlEntities(generics)
                     }
                 }
@@ -656,12 +664,16 @@ class BetterTSQuickNavigateBuilder {
             }
 
             FunctionCallType.JS -> {
-                return if (parent is JSClass) StringUtil.notNullize(parent.qualifiedName, "default") else ""
+                return if (parent is JSClass) {
+                    StringUtil.notNullize(parent.qualifiedName, BetterTSDocumentationProvider.DEFAULT_CLASS_NAME)
+                } else {
+                    ""
+                }
             }
         }
     }
 
-    protected fun formatVisibility(owner: JSAttributeListOwner, attributeList: JSAttributeList,
+    private fun formatVisibility(owner: JSAttributeListOwner, attributeList: JSAttributeList,
             type: JSAttributeList.AccessType): String? {
         return formatVisibility(owner, attributeList, type, FunctionCallType.JAVASCRIPT)
     }
@@ -687,7 +699,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun expandParameters(functionItem: JSFunctionItem,
+    private fun expandParameters(functionItem: JSFunctionItem,
             parameters: Collection<BetterTSDocParameterInfoPrinter>,
             substitutor: JSTypeSubstitutor): Collection<BetterTSDocParameterInfoPrinter> {
         val result = ArrayList<BetterTSDocParameterInfoPrinter>()
@@ -713,7 +725,7 @@ class BetterTSQuickNavigateBuilder {
         return result
     }
 
-    protected fun getNarrowedType(originalElement: PsiElement, substitutor: JSTypeSubstitutor): JSType? {
+    private fun getNarrowedType(originalElement: PsiElement, substitutor: JSTypeSubstitutor): JSType? {
         val realOriginalElement = getOriginalElementOrParentIfLeaf(originalElement)
         if (realOriginalElement is JSReferenceExpression
                 && JSTypeGuardChecker.isNarrowableReference(realOriginalElement)) {
@@ -726,7 +738,7 @@ class BetterTSQuickNavigateBuilder {
         return null
     }
 
-    protected fun isGuessedOptional(variableLikeElement: JSElement): Boolean {
+    private fun isGuessedOptional(variableLikeElement: JSElement): Boolean {
         return isGuessedOptional(variableLikeElement, FunctionCallType.JAVASCRIPT)
     }
 
@@ -772,7 +784,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun createForProperty(element: JSProperty, originalElement: PsiElement, jsDoc: Boolean): String? {
+    private fun createForProperty(element: JSProperty, originalElement: PsiElement, jsDoc: Boolean): String? {
         var name = JSPsiImplUtils.getNameOrComputedPropertyName(element, true)
         return if (name == null) {
             null
@@ -797,7 +809,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getPropertyType(element: JSProperty): JSType? {
+    private fun getPropertyType(element: JSProperty): JSType? {
         return JSTypeUtils.widenLiteralTypes(element.jsType)
     }
 
@@ -813,18 +825,18 @@ class BetterTSQuickNavigateBuilder {
         return null
     }
 
-    protected fun createForFunction(function: JSFunction, originalElement: PsiElement): String {
-        val newParameters: List<BetterTSDocParameterInfoPrinter> = mapParametersToInfos(function)
-        val newReturnInfo: BetterTSDocBuilderSimpleInfo = mapReturnTypeToInfo(function)
+    private fun createForFunction(function: JSFunction, originalElement: PsiElement): String {
+        val newParameters = mapParametersToInfos(function)
+        val newReturnInfo = mapReturnTypeToInfo(function)
         return getFunctionDefinitionWithHighlighting(function, newParameters, newReturnInfo, originalElement,
                 false).toString()
     }
 
-    protected fun getQNameSeparator(element: PsiElement): String {
+    private fun getQNameSeparator(element: PsiElement): String {
         return "."
     }
 
-    fun getFunctionDefinitionWithHighlighting(functionItem: JSFunctionItem,
+    private fun getFunctionDefinitionWithHighlighting(functionItem: JSFunctionItem,
             parameters: Collection<BetterTSDocParameterInfoPrinter>, returnInfo: BetterTSDocBuilderSimpleInfo,
             originalElement: PsiElement, jsDoc: Boolean): CharSequence {
         val substitutor = getTypeSubstitutor(functionItem, originalElement)
@@ -833,7 +845,7 @@ class BetterTSQuickNavigateBuilder {
                 originalElement, jsDoc)
     }
 
-    protected fun getFunctionKind(function: JSFunctionItem, isGetterOrSetter: Boolean,
+    private fun getFunctionKind(function: JSFunctionItem, isGetterOrSetter: Boolean,
             shouldAppendKeyword: Boolean): ObjectKind {
         return if (isGetterOrSetter) {
             ObjectKind.PROPERTY
@@ -846,7 +858,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun createForVariableOrField(variableOrField: JSFieldVariable, originalElement: PsiElement?,
+    private fun createForVariableOrField(variableOrField: JSFieldVariable, originalElement: PsiElement?,
             jsDoc: Boolean): String {
         val parent = JSResolveUtil.findParent(variableOrField)
         val modifiers = java.lang.StringBuilder()
@@ -891,20 +903,20 @@ class BetterTSQuickNavigateBuilder {
         return typePart
     }
 
-    protected fun mapParametersToInfos(parsedFunction: JSFunctionItem): List<BetterTSDocParameterInfoPrinter> {
+    private fun mapParametersToInfos(parsedFunction: JSFunctionItem): List<BetterTSDocParameterInfoPrinter> {
         return ContainerUtil.map(parsedFunction.parameters) { parameter: JSParameterItem? ->
             BetterTSDocParameterInfoPrinter(parameter)
         }
     }
 
-    protected fun mapReturnTypeToInfo(parsedFunction: JSFunctionItem): BetterTSDocBuilderSimpleInfo {
+    private fun mapReturnTypeToInfo(parsedFunction: JSFunctionItem): BetterTSDocBuilderSimpleInfo {
         val newReturnInfo = BetterTSDocBuilderSimpleInfo()
         newReturnInfo.jsType = parsedFunction.returnType
 
         return newReturnInfo
     }
 
-    fun createForJSClass(jsClass: JSClass, originalElement: PsiElement?, jsDoc: Boolean): String? {
+    private fun createForJSClass(jsClass: JSClass, originalElement: PsiElement?, jsDoc: Boolean): String? {
         var qName = jsClass.qualifiedName
         return if (qName == null) {
             null
@@ -924,7 +936,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getReturnTypeForQuickNavigate(function: JSFunctionItem, set: Boolean, returnType: JSType?,
+    private fun getReturnTypeForQuickNavigate(function: JSFunctionItem, set: Boolean, returnType: JSType?,
             substitutor: JSTypeSubstitutor): JSType? {
         return if (!set) {
             var type = returnType
@@ -946,7 +958,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getPresentableTypeText(rawType: JSType?, substitutor: JSTypeSubstitutor, jsDoc: Boolean,
+    private fun getPresentableTypeText(rawType: JSType?, substitutor: JSTypeSubstitutor, jsDoc: Boolean,
             context: PsiElement?): String? {
         var type = getTypeWithAppliedSubstitutor(rawType, substitutor)
         return if (type == null) {
@@ -963,13 +975,13 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getTypeWithAppliedSubstitutor(rawType: JSType?, substitutor: JSTypeSubstitutor): JSType? {
+    private fun getTypeWithAppliedSubstitutor(rawType: JSType?, substitutor: JSTypeSubstitutor): JSType? {
         return JSTypeUtils.applyGenericArguments(JSTypeUtils.applyCompositeMapping(rawType) { el: JSType? ->
             GenericArrayBuilder.asArrayIfGenericType(JSCompositeTypeImpl.optimizeTypeIfComposite(el))
         }, substitutor)
     }
 
-    protected fun appendFunctionAttributes(functionItem: JSFunctionItem, result: StringBuilder,
+    private fun appendFunctionAttributes(functionItem: JSFunctionItem, result: StringBuilder,
             shouldAppendKeyword: Boolean) {
         if (functionItem is JSFunction) {
             appendAttrList(functionItem, result)
@@ -981,7 +993,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun shouldAppendFunctionKeyword(function: JSFunctionItem, parent: PsiElement?): Boolean {
+    private fun shouldAppendFunctionKeyword(function: JSFunctionItem, parent: PsiElement?): Boolean {
         return if (JSPsiImplUtils.isGetterOrSetter(function)) {
             false
         } else if (function !is JSFunctionProperty && function !is TypeScriptFunctionSignature
@@ -992,7 +1004,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun appendAttrList(owner: JSAttributeListOwner, result: StringBuilder) {
+    private fun appendAttrList(owner: JSAttributeListOwner, result: StringBuilder) {
         val attributeList = owner.attributeList
         if (attributeList != null) {
             val type = attributeList.accessType
@@ -1018,32 +1030,32 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun appendPlainModifierList(attributeList: JSAttributeList, result: StringBuilder) {
+    private fun appendPlainModifierList(attributeList: JSAttributeList, result: StringBuilder) {
         appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.ASYNC)
         appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.STATIC)
         appendModifierWithSpace(result, attributeList, JSAttributeList.ModifierType.GENERATOR)
     }
 
-    protected fun getVariableOrFieldType(variable: JSTypeDeclarationOwner): JSType? {
+    private fun getVariableOrFieldType(variable: JSTypeDeclarationOwner): JSType? {
         return JSShowTypeInfoAction.getTypeForDocumentation(variable)
     }
 
-    protected fun appendType(context: PsiElement, typeText: String?, builder: StringBuilder) {
+    private fun appendType(context: PsiElement, typeText: String?, builder: StringBuilder) {
         if (!StringUtil.isEmpty(typeText)) {
             builder.append(JSSymbolPresentationProvider.getDefaultTypeSeparator(context)).append(typeText)
         }
     }
 
-    protected fun getClassQualifiedName(jsClass: JSClass, packageOrModule: String?): String? {
+    private fun getClassQualifiedName(jsClass: JSClass, packageOrModule: String?): String? {
         return if (!StringUtil.isEmpty(packageOrModule)) packageOrModule + "." + jsClass.name else jsClass.name
     }
 
-    protected val isIncludeObjectInExtendsList: Boolean
+    private val isIncludeObjectInExtendsList: Boolean
         get() {
             return false
         }
 
-    protected fun createQuickNavigateForJSElement(element: JSElement, originalElement: PsiElement, declaration: String,
+    private fun createQuickNavigateForJSElement(element: JSElement, originalElement: PsiElement, declaration: String,
             kind: ObjectKind, jsDoc: Boolean): String? {
         val qName = if (element is JSQualifiedNamedElement) element.qualifiedName else element.name
         return if (StringUtil.isEmpty(qName)) {
@@ -1068,7 +1080,7 @@ class BetterTSQuickNavigateBuilder {
         }
     }
 
-    protected fun getJSElementType(element: JSElement, originalElement: PsiElement): JSType? {
+    private fun getJSElementType(element: JSElement, originalElement: PsiElement): JSType? {
         return if (element is JSTypeOwner) {
             (element as JSTypeOwner).jsType
         } else {
@@ -1145,7 +1157,7 @@ class BetterTSQuickNavigateBuilder {
         }
 
         override fun visitArgumentList(node: ASTNode) {
-            var treeNext: ASTNode
+            var treeNext: ASTNode?
             var expr = node.findChildByType(JSVariableBaseImpl.IDENTIFIER_TOKENS_SET)
             while (expr != null) {
                 addExpr(expr)
@@ -1284,11 +1296,11 @@ class BetterTSQuickNavigateBuilder {
 
     companion object {
 
-        const val TIMEOUT_MILLIS = 500
+        private const val TIMEOUT_MILLIS = 500L
 
         private fun getServiceResult(element: PsiElement, originalElement: PsiElement): String? {
             val future = BetterTSServiceQuickInfoParser.requestServiceQuickInfo(element, originalElement)
-            return JSLanguageServiceUtil.awaitFuture(future, 500L)
+            return JSLanguageServiceUtil.awaitFuture(future, TIMEOUT_MILLIS)
         }
 
         private fun isWhitelisted(originalElement: PsiElement): Boolean {
@@ -1359,7 +1371,7 @@ class BetterTSQuickNavigateBuilder {
             }
         }
 
-        protected fun getGenerics(element: JSElement, substitutor: JSTypeSubstitutor): String? {
+        private fun getGenerics(element: JSElement, substitutor: JSTypeSubstitutor): String? {
             return if (element is TypeScriptTypeParameterListOwner) {
                 val list = element.typeParameterList
                 if (list == null) {
@@ -1393,7 +1405,7 @@ class BetterTSQuickNavigateBuilder {
             return buildHtmlForVariableOrField(element, "", qName, false, typePart)
         }
 
-        protected fun isFileNameRequired(element: PsiElement, originalElement: PsiElement): Boolean {
+        private fun isFileNameRequired(element: PsiElement, originalElement: PsiElement): Boolean {
             val elementFile = PsiUtilCore.getVirtualFile(element)
             val originalFile = PsiUtilCore.getVirtualFile(originalElement)
             return elementFile == null || elementFile != originalFile
@@ -1408,7 +1420,7 @@ class BetterTSQuickNavigateBuilder {
             return getQuickNavigateHtmlHighlighting(context, qName, prefix, finalText, toHighlight)
         }
 
-        protected fun buildResult(kind: ObjectKind, objectText: String, element: PsiElement,
+        private fun buildResult(kind: ObjectKind, objectText: String, element: PsiElement,
                 originalElement: PsiElement): String {
             val needFileName = isFileNameRequired(element, originalElement)
             return if (!needFileName) {
@@ -1558,7 +1570,7 @@ class BetterTSQuickNavigateBuilder {
             }
         }
 
-        protected fun appendModifierWithSpace(result: StringBuilder, attributeList: JSAttributeList,
+        private fun appendModifierWithSpace(result: StringBuilder, attributeList: JSAttributeList,
                 modifier: JSAttributeList.ModifierType) {
             if (attributeList.hasModifier(modifier)) {
                 result.append(modifier.keyword).append(" ")

@@ -1,6 +1,5 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
-import com.intellij.lang.javascript.documentation.JSHtmlHighlightingUtil
 import com.intellij.lang.javascript.presentable.JSFormatUtil
 import com.intellij.lang.javascript.psi.JSType
 import com.intellij.openapi.project.DumbService
@@ -36,7 +35,7 @@ open class BetterTSDocBuilderSimpleInfo {
         myDescription.setLength(0)
     }
 
-    fun addUnknownTag(key: String, text: String?) {
+    private fun addUnknownTag(key: String, text: String?) {
         this.myUnknownTags[key] = StringUtil.notNullize(text)
     }
 

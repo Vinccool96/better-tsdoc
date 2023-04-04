@@ -60,7 +60,7 @@ class BetterTSDocParameterInfoPrinter(private val context: PsiElement?, private 
         result.append("</pre></div>")
         val contentStart = result.length
         result.append("<div class='content'>")
-        result.append(this.getDescriptionMergedWithConfigOptions())
+        result.append(this.descriptionMergedWithConfigOptions)
         if (result.length == contentStart + "<div class='content'>".length) {
             result.setLength(contentStart)
         } else {
@@ -68,33 +68,34 @@ class BetterTSDocParameterInfoPrinter(private val context: PsiElement?, private 
         }
     }
 
-    fun getDescriptionMergedWithConfigOptions(): String {
-        return if (myBuilder.optionsMap == null) {
-            myBuilder.finalDescription
-        } else {
-            val optionsBuilder = StringBuilder()
-            optionsBuilder.append("<table class='sections'>")
-            optionsBuilder.append("<tr><td valign='top' class='section'><p>")
-            optionsBuilder.append("Config options").append(":")
-            optionsBuilder.append("</td><td valign='top'>")
-            val var2 = myBuilder.optionsMap!!.entries.iterator()
-            while (var2.hasNext()) {
-                val (key, value) = var2.next()
-                optionsBuilder.append("<p>")
-                BetterTSDocParameterInfoPrinter(null, value).appendOptionDescription(key, optionsBuilder)
-            }
-            optionsBuilder.append("</table>")
-            val description: String = myBuilder.finalDescription
-            val i = description.indexOf(BetterTSDocSeeAlsoPrinter.SEE_ALSO_DOC_TOKEN)
-            if (i != -1) {
-                StringBuilder(description).insert(i, optionsBuilder).toString()
+    private val descriptionMergedWithConfigOptions: String
+        get() {
+            return if (myBuilder.optionsMap == null) {
+                myBuilder.finalDescription
             } else {
-                description + optionsBuilder
+                val optionsBuilder = StringBuilder()
+                optionsBuilder.append("<table class='sections'>")
+                optionsBuilder.append("<tr><td valign='top' class='section'><p>")
+                optionsBuilder.append("Config options").append(":")
+                optionsBuilder.append("</td><td valign='top'>")
+                val var2 = myBuilder.optionsMap!!.entries.iterator()
+                while (var2.hasNext()) {
+                    val (key, value) = var2.next()
+                    optionsBuilder.append("<p>")
+                    BetterTSDocParameterInfoPrinter(null, value).appendOptionDescription(key, optionsBuilder)
+                }
+                optionsBuilder.append("</table>")
+                val description: String = myBuilder.finalDescription
+                val i = description.indexOf(BetterTSDocSeeAlsoPrinter.SEE_ALSO_DOC_TOKEN)
+                if (i != -1) {
+                    StringBuilder(description).insert(i, optionsBuilder).toString()
+                } else {
+                    description + optionsBuilder
+                }
             }
         }
-    }
 
-    fun appendParameterInfoInSignature(actualName: String, result: StringBuilder) {
+    private fun appendParameterInfoInSignature(actualName: String, result: StringBuilder) {
         val qName = if (!StringUtil.isEmpty(myBuilder.namespace)) myBuilder.namespace + "." + actualName else actualName
         result.append(qName)
         if (myBuilder.optional) {

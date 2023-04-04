@@ -33,7 +33,7 @@ object BetterTSServiceQuickInfoParser {
         }
     }
 
-    fun findGenericsEnd(rest: String): Int {
+    private fun findGenericsEnd(rest: String): Int {
         var count = 1
         val array = rest.toCharArray()
 
@@ -55,7 +55,7 @@ object BetterTSServiceQuickInfoParser {
         return -1
     }
 
-    fun parseServiceText(resolvedElement: PsiElement, originalText: String): String? {
+    fun parseServiceText(resolvedElement: PsiElement, originalText: String): String {
         val info = parseServiceTextAsInfo(originalText)
         return if (info == null) StringUtil.escapeXmlEntities(originalText) else getQuickNavigate(resolvedElement, info)
     }

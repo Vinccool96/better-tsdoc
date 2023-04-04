@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.codeInsight.documentation.DocumentationManager
@@ -81,6 +83,7 @@ import org.jetbrains.annotations.Nls
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Consumer
 
+@Suppress("UNUSED_PARAMETER", "UnstableApiUsage", "unused")
 open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: BetterTSQuickNavigateBuilder) :
         CodeDocumentationProvider, ExternalDocumentationProvider {
 
@@ -134,7 +137,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         doc.append("<div class='content'>")
         BetterTSDocSimpleInfoPrinter.addDescription(JavaScriptBundle.message("typescript.types.type.member",
                 getMergedKindDescription(results)), doc)
-        doc.append("<p>")
+        doc.append(P_TAG)
         doc.append(JavaScriptBundle.message("typescript.types.merged.parts", *arrayOfNulls(0)))
         doc.append("<br>")
         val collector = LinkedDocCollector(originalElement!!, results, true)
@@ -147,7 +150,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         return doc.toString()
     }
 
-    fun appendParameterDoc(builder: StringBuilder, parameter: JSParameter) {
+    private fun appendParameterDoc(builder: StringBuilder, parameter: JSParameter) {
         val settings = TypeScriptCodeStyleSettings.getTypeScriptSettings(parameter)
         if (!DumbService.isDumb(parameter.project)) {
             val type = JSShowTypeInfoAction.getTypeForDocumentation(parameter)
@@ -165,7 +168,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         builder.append("* @param ").append(parameter.name)
     }
 
-    fun getFunctionReturnTypeForInfoDoc(function: JSFunction): JSType? {
+    private fun getFunctionReturnTypeForInfoDoc(function: JSFunction): JSType? {
         return if (!TypeScriptCodeStyleSettings.getTypeScriptSettings(function).JSDOC_INCLUDE_TYPES) {
             null
         } else if (function is TypeScriptFunction && function.returnTypeElement != null) {
@@ -175,10 +178,10 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    fun getEffectiveElement(_element: PsiElement, originalElement: PsiElement?): PsiElement? {
-        if (_element is JSReferenceExpression && originalElement != null) {
+    private fun getEffectiveElement(psiElement: PsiElement, originalElement: PsiElement?): PsiElement {
+        if (psiElement is JSReferenceExpression && originalElement != null) {
             val elements =
-                    TypeScriptGoToDeclarationHandler.getResultsFromService(_element.project, originalElement, null)
+                    TypeScriptGoToDeclarationHandler.getResultsFromService(psiElement.project, originalElement, null)
             if (!elements.isNullOrEmpty()) {
                 val element = adjustResultFromServiceForDocumentation(elements[0])
                 if (element != null) {
@@ -188,7 +191,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
 
         var resolve: PsiElement?
-        if (_element is JSExpression && _element !is JSQualifiedNamedElement) {
+        if (psiElement is JSExpression && psiElement !is JSQualifiedNamedElement) {
             val candidate = BetterTSQuickNavigateBuilder.getOriginalElementOrParentIfLeaf(originalElement)
             resolve = candidate
             if (candidate is JSReferenceExpression) {
@@ -199,18 +202,18 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
             }
         }
 
-        if (_element is ES6ImportExportSpecifierAlias) {
-            val element = _element.findSpecifierElement()
+        if (psiElement is ES6ImportExportSpecifierAlias) {
+            val element = psiElement.findSpecifierElement()
             if (element != null) {
                 resolve = element.resolve()
                 return (resolve ?: element)
             }
         }
 
-        return _element
+        return psiElement
     }
 
-    fun getTypeTextForGenerateDoc(rawType: JSType): String {
+    private fun getTypeTextForGenerateDoc(rawType: JSType): String {
         val realRawType = JSTypeUtils.applyCompositeMapping(rawType) { el: JSType? ->
             JSCompositeTypeImpl.optimizeTypeIfComposite(el)
         }!!
@@ -219,7 +222,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         return builder.result
     }
 
-    fun shouldAddTypeAnnotation(context: PsiElement?): Boolean {
+    private fun shouldAddTypeAnnotation(context: PsiElement?): Boolean {
         return if (context == null) {
             false
         } else {
@@ -228,7 +231,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    fun getDeclarationAccessModifier(name: String?,
+    private fun getDeclarationAccessModifier(name: String?,
             attributeListOwner: JSAttributeListOwner?): JSAttributeList.AccessType? {
         return if (attributeListOwner == null) {
             null
@@ -246,25 +249,25 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
             return this.getDocumentationForImplicitElement(psiElement)
         }
 
-        var _element = this.getEffectiveElement(psiElement, originalElement) ?: return null
-        if (_element.parent != null && _element.parent is PsiComment) {
-            _element = _element.parent
+        var effectiveElement = this.getEffectiveElement(psiElement, originalElement)
+        if (effectiveElement.parent != null && effectiveElement.parent is PsiComment) {
+            effectiveElement = effectiveElement.parent
         }
 
-        if (_element is PsiComment) {
-            return doGetCommentTextFromComment(_element, originalElement)
+        if (effectiveElement is PsiComment) {
+            return doGetCommentTextFromComment(effectiveElement, originalElement)
         }
 
-        val results = tryMultiResolveElement(_element)
+        val results = tryMultiResolveElement(effectiveElement)
         if (results.size > 1) {
-            return this.processMultiResolvedElements(_element, originalElement, results)
+            return this.processMultiResolvedElements(effectiveElement, originalElement, results)
         }
 
-        var element = findElementForWhichPreviousCommentWillBeSearched(_element, originalElement)
+        var element = findElementForWhichPreviousCommentWillBeSearched(effectiveElement, originalElement)
         var docComment: PsiComment?
         if (element != null) {
             docComment = JSDocumentationUtils.findDocComment(element,
-                    if (_element is JSAttributeNameValuePair) originalElement else null, null)
+                    if (effectiveElement is JSAttributeNameValuePair) originalElement else null, null)
             if (docComment == null) {
                 val meaningfulElement = getPossibleMeaningfulElement(element)
                 docComment = JSDocumentationUtils.findDocComment(meaningfulElement)
@@ -272,9 +275,9 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                     element = meaningfulElement
                 }
 
-                if (_element is JSPsiNamedElementBase) {
-                    val name = _element.name
-                    val typeofComment = JSDocumentationUtils.findScopeComment(_element)
+                if (effectiveElement is JSPsiNamedElementBase) {
+                    val name = effectiveElement.name
+                    val typeofComment = JSDocumentationUtils.findScopeComment(effectiveElement)
                     if (name != null && typeofComment is JSDocComment) {
                         val result = Ref.create<String?>()
                         JSClassResolver.processImplicitElements(name, { e ->
@@ -288,7 +291,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                 }
             }
 
-            element = findTargetElement(_element, element)
+            element = findTargetElement(effectiveElement, element)
             if (docComment != null) {
                 docComment = findFirstDocComment(docComment)
                 val elementType = JSTypeUtils.getTypeOfElement(element)
@@ -315,9 +318,9 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
             }
         }
 
-        val possibleCssName = findPossibleCssName(_element)
+        val possibleCssName = findPossibleCssName(effectiveElement)
         if (possibleCssName != null) {
-            val cssDoc = CssDocumentationProvider.generateDoc(possibleCssName, _element, null)
+            val cssDoc = CssDocumentationProvider.generateDoc(possibleCssName, effectiveElement, null)
             if (cssDoc != null) {
                 return cssDoc
             }
@@ -332,7 +335,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         return if (builder.showDoc()) builder.getDoc() else null
     }
 
-    fun processMultiResolvedElements(element: PsiElement, originalElement: PsiElement?,
+    private fun processMultiResolvedElements(element: PsiElement, originalElement: PsiElement?,
             results: Array<ResolveResult>): @Nls String? {
         JSResolveUtil.stableResolveOrder(results)
         return if (element is JSExpression && results.isNotEmpty()
@@ -350,13 +353,14 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    fun createDocumentationBuilder(element: PsiElement, contextElement: PsiElement?): BetterTSDocumentationBuilder {
+    private fun createDocumentationBuilder(element: PsiElement,
+            contextElement: PsiElement?): BetterTSDocumentationBuilder {
         return BetterTSDocumentationBuilder(element, contextElement, this)
     }
 
-    protected fun doGetCommentTextFromComment(_element: PsiComment, originalElement: PsiElement?): @Nls String? {
-        val builder = this.createDocumentationBuilder(_element, originalElement)
-        JSDocumentationUtils.processDocumentationTextFromComment(_element, _element.node, builder)
+    private fun doGetCommentTextFromComment(element: PsiComment, originalElement: PsiElement?): @Nls String? {
+        val builder = this.createDocumentationBuilder(element, originalElement)
+        JSDocumentationUtils.processDocumentationTextFromComment(element, element.node, builder)
         return builder.getDoc()
     }
 
@@ -546,7 +550,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    protected fun doGenerateDoc(expression: JSExpression?): String? {
+    private fun doGenerateDoc(expression: JSExpression?): String? {
         return if (!isAvailable(expression)) {
             null
         } else {
@@ -568,7 +572,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    protected fun doGenerateDoc(function: JSFunction): String {
+    private fun doGenerateDoc(function: JSFunction): String {
         val builder = StringBuilder()
         val parameterList = function.parameterList
         if (parameterList != null) {
@@ -589,7 +593,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         }
     }
 
-    protected fun doGenerateDoc(field: JSField?): String? {
+    private fun doGenerateDoc(field: JSField?): String? {
         return if (!isAvailable(field)) {
             null
         } else {
@@ -610,7 +614,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         return builder.toString()
     }
 
-    protected fun appendFunctionInfoDoc(function: JSFunction, builder: StringBuilder) {
+    private fun appendFunctionInfoDoc(function: JSFunction, builder: StringBuilder) {
         val returnType = getFunctionReturnTypeForInfoDoc(function)
         var name: String
         if (returnType != null && returnType !is JSVoidType) {
@@ -1211,10 +1215,10 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
 
         var returnTag: String?
             get() {
-                return PropertiesComponent.getInstance().getValue("javascript.return.tag", "returns")
+                return PropertiesComponent.getInstance().getValue(RETURN_TAG_PROPERTY, "returns")
             }
             set(returnTag) {
-                PropertiesComponent.getInstance().setValue("javascript.return.tag", returnTag)
+                PropertiesComponent.getInstance().setValue(RETURN_TAG_PROPERTY, returnTag)
             }
 
         private fun getNavigationItemForLinks(element: PsiElement): NavigationItem? {

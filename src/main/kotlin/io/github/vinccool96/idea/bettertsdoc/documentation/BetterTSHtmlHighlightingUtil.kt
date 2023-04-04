@@ -40,7 +40,7 @@ import java.util.stream.Collectors
 
 object BetterTSHtmlHighlightingUtil {
 
-    fun tryGetHtmlHighlighting(fakeFile: PsiFile, text: String, iterator: SyntaxInfoBuilder.RangeIterator?,
+    private fun tryGetHtmlHighlighting(fakeFile: PsiFile, text: String, iterator: SyntaxInfoBuilder.RangeIterator?,
             startOffset: Int, endOffset: Int): String? {
         val scheme = EditorColorsManager.getInstance().globalScheme
         return readHtmlText(HtmlSyntaxInfoUtil.getHtmlContent(fakeFile, text, iterator, scheme, startOffset, endOffset))
@@ -206,7 +206,7 @@ object BetterTSHtmlHighlightingUtil {
                         return builder.result
                     }
 
-                override fun restoreText(text: CharSequence): CharSequence? {
+                override fun restoreText(text: CharSequence): CharSequence {
                     var realText = text
                     var key: String
                     var value: JSTypeImpl
@@ -249,7 +249,7 @@ object BetterTSHtmlHighlightingUtil {
                     return holder
                 }
 
-            override fun restoreText(text: CharSequence): CharSequence? {
+            override fun restoreText(text: CharSequence): CharSequence {
                 return replaceSubSequence(text, holder, originalText)
             }
         }
