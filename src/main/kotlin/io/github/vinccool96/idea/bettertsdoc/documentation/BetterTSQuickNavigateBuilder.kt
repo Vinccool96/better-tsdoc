@@ -28,7 +28,6 @@ import com.intellij.lang.javascript.psi.types.guard.JSTypeGuardChecker
 import com.intellij.lang.javascript.psi.types.guard.TypeScriptTypeRelations
 import com.intellij.lang.javascript.psi.types.primitives.JSUndefinedType
 import com.intellij.lang.javascript.psi.util.JSUtils
-import  io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSHtmlHighlightingUtil.TextPlaceholder
 import com.intellij.lang.javascript.service.JSLanguageServiceUtil
 import com.intellij.lang.javascript.settings.JSSymbolPresentationProvider
 import com.intellij.lang.typescript.documentation.TypeScriptQuickNavigateBuilder
@@ -59,6 +58,7 @@ import com.intellij.util.SmartList
 import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.ui.StartupUiUtil
 import com.intellij.xml.util.XmlStringUtil
+import io.github.vinccool96.idea.bettertsdoc.documentation.BetterTSHtmlHighlightingUtil.TextPlaceholder
 import org.jetbrains.annotations.Contract
 import org.jetbrains.annotations.Nls
 
@@ -813,7 +813,7 @@ class BetterTSQuickNavigateBuilder {
         return null
     }
 
-    protected fun createForFunction(function: JSFunction, originalElement: PsiElement): String? {
+    protected fun createForFunction(function: JSFunction, originalElement: PsiElement): String {
         val newParameters: List<BetterTSDocParameterInfoPrinter> = mapParametersToInfos(function)
         val newReturnInfo: BetterTSDocBuilderSimpleInfo = mapReturnTypeToInfo(function)
         return getFunctionDefinitionWithHighlighting(function, newParameters, newReturnInfo, originalElement,
@@ -1389,7 +1389,7 @@ class BetterTSQuickNavigateBuilder {
             }
         }
 
-        private fun buildHtmlForProperty(element: JSProperty, qName: String, typePart: CharSequence): String? {
+        private fun buildHtmlForProperty(element: JSProperty, qName: String, typePart: CharSequence): String {
             return buildHtmlForVariableOrField(element, "", qName, false, typePart)
         }
 
