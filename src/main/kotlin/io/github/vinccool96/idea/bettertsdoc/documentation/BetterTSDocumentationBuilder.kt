@@ -592,7 +592,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
     @get:Nls
     val renderedDoc: String?
         get() {
-            var description = createPrinter(false).getRenderedDoc(myProvider)
+            var description: String? = createPrinter(false).getRenderedDoc(myProvider)
             return if (description == null) {
                 null
             } else {
