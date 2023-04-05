@@ -11,6 +11,7 @@ import com.intellij.lang.ecmascript6.psi.JSExportAssignment
 import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor.MetaDocType
+import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.documentation.JSExternalLibraryDocBundle
 import com.intellij.lang.javascript.index.JSSymbolUtil
 import com.intellij.lang.javascript.library.JSCorePredefinedLibrariesProvider
@@ -1017,7 +1018,9 @@ object BetterTSDocumentationUtils {
     }
 
     private fun skipOuterElements(comment: PsiComment): PsiComment? {
-        return comment
+        val sKE = JSDocumentationUtils::class.java.getDeclaredMethod("skipOuterElements", PsiComment::class.java)
+        sKE.isAccessible = true
+        return sKE.invoke(null, comment) as PsiComment?
     }
 
     private fun getParentToSearchDocComment(element: PsiElement): PsiElement? {
@@ -1411,8 +1414,14 @@ object BetterTSDocumentationUtils {
         val isJsElement = element is JSElementBase
         val namespace = if (isJsElement) (element as JSElementBase).namespace else null
         val prefix = if (path != null) FileUtilRt.toSystemIndependentName(path) + "%" else ""
-        var linkText =
-                prefix + elementName + if (namespace != null) "%" + namespace.qualifiedName else if (isJsElement) "%null" else ""
+        val namespaceQualifiedName = if (namespace != null) {
+            "%" + namespace.qualifiedName
+        } else if (isJsElement) {
+            "%null"
+        } else {
+            ""
+        }
+        var linkText = prefix + elementName + namespaceQualifiedName
         if (elementId > 0) {
             linkText = "$linkText:$elementId"
         }
