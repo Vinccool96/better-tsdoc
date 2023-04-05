@@ -16,7 +16,6 @@ import com.intellij.lang.ecmascript6.psi.ES6ImportedExportedDefaultBinding
 import com.intellij.lang.ecmascript6.resolve.ES6PsiUtil
 import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
-import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
 import com.intellij.lang.javascript.library.JSLibraryManager
 import com.intellij.lang.javascript.presentable.JSFormatUtil
@@ -266,18 +265,18 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
         var element = findElementForWhichPreviousCommentWillBeSearched(effectiveElement, originalElement)
         var docComment: PsiComment?
         if (element != null) {
-            docComment = JSDocumentationUtils.findDocComment(element,
+            docComment = BetterTSDocumentationUtils.findDocComment(element,
                     if (effectiveElement is JSAttributeNameValuePair) originalElement else null, null)
             if (docComment == null) {
                 val meaningfulElement = getPossibleMeaningfulElement(element)
-                docComment = JSDocumentationUtils.findDocComment(meaningfulElement)
+                docComment = BetterTSDocumentationUtils.findDocComment(meaningfulElement)
                 if (docComment != null) {
                     element = meaningfulElement
                 }
 
                 if (effectiveElement is JSPsiNamedElementBase) {
                     val name = effectiveElement.name
-                    val typeofComment = JSDocumentationUtils.findScopeComment(effectiveElement)
+                    val typeofComment = BetterTSDocumentationUtils.findScopeComment(effectiveElement)
                     if (name != null && typeofComment is JSDocComment) {
                         val result = Ref.create<String?>()
                         JSClassResolver.processImplicitElements(name, { e ->
@@ -297,7 +296,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                 val elementType = JSTypeUtils.getTypeOfElement(element)
                 val typeofResolvedElement = getTypeofResolvedElement(docComment, elementType)
                 if (typeofResolvedElement != null) {
-                    val typeofComment = JSDocumentationUtils.findDocComment(typeofResolvedElement)
+                    val typeofComment = BetterTSDocumentationUtils.findDocComment(typeofResolvedElement)
                     if (typeofComment != null) {
                         docComment = typeofComment
                         element = typeofResolvedElement
@@ -305,16 +304,20 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                 }
 
                 val isTypeOnlyComment = elementType != null && elementType.isEquivalentTo(
-                        JSDocumentationUtils.tryCreateTypeFromComment(docComment, true, true, false), null)
+                        BetterTSDocumentationUtils.tryCreateTypeFromComment(docComment, spaceAllowed = true,
+                                allowEOLComment = true, allowCommentAfterType = false), null)
                 val builder = this.createDocumentationBuilder(element, originalElement)
                 if (!isTypeOnlyComment) {
-                    JSDocumentationUtils.processDocumentationTextFromComment(docComment, docComment.node, builder)
+                    BetterTSDocumentationUtils.processDocumentationTextFromComment(docComment, docComment.node, builder)
                 }
 
                 builder.fillEvaluatedType()
                 val parameterDoc = if (element is JSParameter) element else null
-                return if (parameterDoc != null) builder.getParameterDoc(parameterDoc, null, this,
-                        originalElement) else builder.getDoc()
+                return if (parameterDoc != null) {
+                    builder.getParameterDoc(parameterDoc, null, this, originalElement)
+                } else {
+                    builder.getDoc()
+                }
             }
         }
 
@@ -360,15 +363,15 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
 
     private fun doGetCommentTextFromComment(element: PsiComment, originalElement: PsiElement?): @Nls String? {
         val builder = this.createDocumentationBuilder(element, originalElement)
-        JSDocumentationUtils.processDocumentationTextFromComment(element, element.node, builder)
+        BetterTSDocumentationUtils.processDocumentationTextFromComment(element, element.node, builder)
         return builder.getDoc()
     }
 
     private fun getDocumentationForImplicitElement(element: JSImplicitElement): String? {
         val builder = this.createDocumentationBuilder(element, element)
-        val comment = JSDocumentationUtils.findCommentForImplicitElement(element)
+        val comment = BetterTSDocumentationUtils.findCommentForImplicitElement(element)
         if (comment != null) {
-            JSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
+            BetterTSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
         }
 
         builder.fillEvaluatedType()
@@ -512,11 +515,11 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
     override fun parseContext(startPoint: PsiElement): Pair<PsiElement, PsiComment>? {
         val context = PsiTreeUtil.getNonStrictParentOfType<PsiElement>(startPoint, JSProperty::class.java,
                 JSFunction::class.java, JSExpressionStatement::class.java, JSVarStatement::class.java)
-        return if (context != null) Pair.create(context, JSDocumentationUtils.findDocComment(context)) else null
+        return if (context != null) Pair.create(context, BetterTSDocumentationUtils.findDocComment(context)) else null
     }
 
     override fun generateDocumentationContentStub(contextComment: PsiComment?): String? {
-        val el = JSDocumentationUtils.findAttachedElementFromComment(contextComment)
+        val el = BetterTSDocumentationUtils.findAttachedElementFromComment(contextComment)
         return if (el is JSFunction) {
             this.doGenerateDoc(el)
         } else {
@@ -651,7 +654,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
 
     fun appendSeeAlsoLink(linkPart: String, displayText: String, seeAlsoValue: String, element: PsiElement,
             result: StringBuilder): Boolean {
-        return if (!JSDocumentationUtils.NAMEPATH_PATTERN.matcher(seeAlsoValue).matches()) {
+        return if (!BetterTSDocumentationUtils.NAMEPATH_PATTERN.matcher(seeAlsoValue).matches()) {
             false
         } else {
             DocumentationManager.createHyperlink(result, seeAlsoValue, seeAlsoValue, true)
@@ -705,7 +708,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                 }
 
                 fun accept(element: PsiElement) {
-                    val comment = JSDocumentationUtils.findDocComment(element)
+                    val comment = BetterTSDocumentationUtils.findDocComment(element)
                     if (comment is JSDocComment) {
                         sink.accept(comment)
                     }
@@ -716,7 +719,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
 
     @Nls
     override fun generateRenderedDoc(comment: PsiDocCommentBase): String? {
-        var owner = JSDocumentationUtils.findAssociatedElement(comment)
+        var owner = BetterTSDocumentationUtils.findAssociatedElement(comment)
         if (owner == null) {
             owner = comment.owner
         }
@@ -731,7 +734,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                 }
             }
             val builder = createDocumentationBuilder(owner, owner)
-            JSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
+            BetterTSDocumentationUtils.processDocumentationTextFromComment(comment, comment.node, builder)
             builder.renderedDoc
         }
     }
@@ -890,7 +893,8 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                         builder.append(", <br>")
                     }
                     val elementId = indices.getInt(element)
-                    JSDocumentationUtils.appendHyperLinkToElement(nav as PsiElement?, name, builder, presentableName,
+                    BetterTSDocumentationUtils.appendHyperLinkToElement(nav as PsiElement?, name, builder,
+                            presentableName,
                             true, addFilename, elementId)
                 }
             }
@@ -1006,8 +1010,8 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
             return if (dialect != null && !dialect.isECMA4 && element !is JSReferenceExpression) {
                 val urls: MutableList<String> = SmartList()
                 val project = element.project
-                if (JSDocumentationUtils.isFromCoreLibFile(element)) {
-                    val documentation = JSDocumentationUtils.getJsMdnDocumentation(element, originalElement)
+                if (BetterTSDocumentationUtils.isFromCoreLibFile(element)) {
+                    val documentation = BetterTSDocumentationUtils.getJsMdnDocumentation(element, originalElement)
                     if (documentation != null) {
                         urls.add(documentation.url)
                     }
@@ -1037,7 +1041,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                         relativeUrl = getParameterSignature(docElement)
                         elementFQN += relativeUrl
                     }
-                    relativeUrl = JSDocumentationUtils.getLibDocRelativeUrl(baseUrl, elementFQN)
+                    relativeUrl = BetterTSDocumentationUtils.getLibDocRelativeUrl(baseUrl, elementFQN)
                     urls.add(baseUrl + (if (!baseUrl.endsWith("/") && !StringUtil.isEmpty(
                                     relativeUrl)) "/" else "") + relativeUrl)
                 }
@@ -1174,7 +1178,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                     parent = grandParent.getParent()
                 }
                 if (psiElement.isSetProperty || psiElement.isGetProperty) {
-                    var doc: PsiElement? = JSDocumentationUtils.findDocComment(psiElement)
+                    var doc: PsiElement? = BetterTSDocumentationUtils.findDocComment(psiElement)
                     if (doc != null) {
                         return psiElement
                     }
@@ -1187,7 +1191,7 @@ open class BetterTSDocumentationProvider(private val myQuickNavigateBuilder: Bet
                                 if (name != null && (name == psiElement.name)
                                         && ((prevFunction.isGetProperty && psiElement.isSetProperty)
                                                 || (prevFunction.isSetProperty && psiElement.isGetProperty))) {
-                                    doc = JSDocumentationUtils.findDocComment(prevFunction)
+                                    doc = BetterTSDocumentationUtils.findDocComment(prevFunction)
                                     if (doc != null) {
                                         return prevFunction
                                     }

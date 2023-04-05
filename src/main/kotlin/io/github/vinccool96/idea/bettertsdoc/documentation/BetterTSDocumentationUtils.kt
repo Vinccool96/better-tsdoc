@@ -1,15 +1,23 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.codeInsight.documentation.DocumentationManagerUtil
+import com.intellij.documentation.mdn.MdnApiNamespace
+import com.intellij.documentation.mdn.MdnSymbolDocumentation
+import com.intellij.documentation.mdn.getJsMdnDocumentation
 import com.intellij.ide.BrowserUtil
 import com.intellij.lang.ASTNode
+import com.intellij.lang.ecmascript6.psi.ES6ExportDefaultAssignment
 import com.intellij.lang.ecmascript6.psi.JSExportAssignment
 import com.intellij.lang.javascript.*
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor.MetaDocType
-import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.documentation.JSExternalLibraryDocBundle
+import com.intellij.lang.javascript.index.JSSymbolUtil
+import com.intellij.lang.javascript.library.JSCorePredefinedLibrariesProvider
 import com.intellij.lang.javascript.psi.*
+import com.intellij.lang.javascript.psi.JSElementBase.ClassOrInterface
+import com.intellij.lang.javascript.psi.ecma6.TypeScriptCallSignature
+import com.intellij.lang.javascript.psi.ecma6.TypeScriptCompileTimeType
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptObjectType
 import com.intellij.lang.javascript.psi.ecma6.TypeScriptTypeMember
 import com.intellij.lang.javascript.psi.ecmal4.JSAttributeListOwner
@@ -24,29 +32,45 @@ import com.intellij.lang.javascript.psi.jsdoc.JSDocComment
 import com.intellij.lang.javascript.psi.jsdoc.JSDocTag
 import com.intellij.lang.javascript.psi.jsdoc.impl.JSDocCommentImpl
 import com.intellij.lang.javascript.psi.resolve.ImplicitJSVariableImpl
+import com.intellij.lang.javascript.psi.resolve.JSClassResolver
 import com.intellij.lang.javascript.psi.resolve.JSResolveUtil
 import com.intellij.lang.javascript.psi.stubs.TypeScriptProxyImplicitElement
 import com.intellij.lang.javascript.psi.types.*
+import com.intellij.lang.javascript.psi.util.JSDestructuringContext
+import com.intellij.lang.javascript.psi.util.JSDestructuringUtil
+import com.intellij.lang.javascript.psi.util.JSStubBasedPsiTreeUtil
 import com.intellij.lang.javascript.psi.util.JSUtils
+import com.intellij.lang.typescript.library.TypeScriptLibraryProvider
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.project.DumbService
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Pair
 import com.intellij.openapi.util.Ref
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.util.io.FileUtilRt
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.*
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.templateLanguages.OuterLanguageElement
 import com.intellij.psi.tree.TokenSet
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.ObjectUtils
+import com.intellij.util.SmartList
 import com.intellij.util.containers.ContainerUtil
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap
 import it.unimi.dsi.fastutil.ints.Int2ObjectMaps
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import org.jetbrains.annotations.NonNls
 import java.util.*
+import java.util.regex.Matcher
 import java.util.regex.Pattern
+import kotlin.math.max
+import kotlin.math.min
 
+@Suppress("RegExpUnnecessaryNonCapturingGroup", "RegExpRedundantEscape", "unused", "UNCHECKED_CAST")
 object BetterTSDocumentationUtils {
-
-    val base = JSDocumentationUtils::class
 
     private const val NO_NAME_CHARS = ".~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}"
 
@@ -88,9 +112,9 @@ object BetterTSDocumentationUtils {
 
     private val NAMEPATH_PART_PATTERN = Pattern.compile(NAMEPATH_PART)
 
-    val NAMEPATH_PATTERN = Pattern.compile(NAMEPATH)
+    val NAMEPATH_PATTERN = Pattern.compile(NAMEPATH)!!
 
-    val NAMEPATH_IN_TYPE_PATTERN = Pattern.compile(NAMEPATH_IN_TYPE)
+    val NAMEPATH_IN_TYPE_PATTERN = Pattern.compile(NAMEPATH_IN_TYPE)!!
 
     private const val NAMEPATH_OPTIONAL =
             "(?:\\s+((?:[.#~])?(?:import\\s*\\(\\s*(?:'(?:[^\"\\\\]|\\\\.)+'|\"(?:[^\"\\\\]|\\\\.)+\")\\s*\\)|(?:module:|event:|external:)(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+')|[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+)(?:[.#~](?:module:|event:|external:)?(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+'))*(?:[.#~])?)\\s*|(\\s.*)?)"
@@ -100,7 +124,7 @@ object BetterTSDocumentationUtils {
     private const val MODULE_PATTERN =
             "^\\s*%s(?:\\s+((?:[.#~])?(?:import\\s*\\(\\s*(?:'(?:[^\"\\\\]|\\\\.)+'|\"(?:[^\"\\\\]|\\\\.)+\")\\s*\\)|(?:module:|event:|external:)(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+')|[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+)(?:[.#~](?:module:|event:|external:)?(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+'))*(?:[.#~])?))?(.*)$"
 
-    val ourDojoParametersPattern = Pattern.compile("^\\s*([\\p{L}_$][\\p{LD}_$]*):(.*)$", 64)
+    val ourDojoParametersPattern: Pattern = Pattern.compile("^\\s*([\\p{L}_$][\\p{LD}_$]*):(.*)$", 64)
 
     private val ourJSDocParametersPattern = Pattern.compile("^\\s*@param((:? |\\s*\\{).*)$")
 
@@ -256,13 +280,9 @@ object BetterTSDocumentationUtils {
 
     private val ourJSDocVarPattern = Pattern.compile("^\\s*@var\\s+(.*)$")
 
-    private val ourJSDocModulePattern = Pattern.compile(String.format(
-            "^\\s*%s(?:\\s+((?:[.#~])?(?:import\\s*\\(\\s*(?:'(?:[^\"\\\\]|\\\\.)+'|\"(?:[^\"\\\\]|\\\\.)+\")\\s*\\)|(?:module:|event:|external:)(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+')|[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+)(?:[.#~](?:module:|event:|external:)?(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+'))*(?:[.#~])?))?(.*)$",
-            "@module"))
+    private val ourJSDocModulePattern = Pattern.compile(String.format(MODULE_PATTERN, "@module"))
 
-    private val ourProvideModulesPattern = Pattern.compile(String.format(
-            "^\\s*%s(?:\\s+((?:[.#~])?(?:import\\s*\\(\\s*(?:'(?:[^\"\\\\]|\\\\.)+'|\"(?:[^\"\\\\]|\\\\.)+\")\\s*\\)|(?:module:|event:|external:)(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+')|[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+)(?:[.#~](?:module:|event:|external:)?(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+'))*(?:[.#~])?))?(.*)$",
-            "@providesModule"))
+    private val ourProvideModulesPattern = Pattern.compile(String.format(MODULE_PATTERN, "@providesModule"))
 
     private val ourJSDocFiresPattern = Pattern.compile(
             "^\\s*@fires\\s+((?:[.#~])?(?:import\\s*\\(\\s*(?:'(?:[^\"\\\\]|\\\\.)+'|\"(?:[^\"\\\\]|\\\\.)+\")\\s*\\)|(?:module:|event:|external:)(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+')|[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+)(?:[.#~](?:module:|event:|external:)?(?:[^.~#\\s:(){}\\[\\]<>?!='\",|&*@`\\p{C}]+|\"(?:[^\"\\\\]|\\\\.)+\"|'(?:[^'\\\\]|\\\\.)+'))*(?:[.#~])?)(.*)$")
@@ -432,18 +452,18 @@ object BetterTSDocumentationUtils {
             Pattern.compile("^\\s*description:(.*)$") to "descr",
             Pattern.compile("^ summary(?:\\:)?(.*)\$") to "summ",
             Pattern.compile("^\\s*\\*(?:\\*)?(.*)$") to "*",
-            Pattern.compile("^[/]+(.*)$") to "/",
+            Pattern.compile("^/+(.*)$") to "/",
             Pattern.compile("^\\s*Parameters:(.*)$") to "Parame",
     )
 
     private val DOC_COMMENT_ALLOWED_AFTER =
             TokenSet.orSet(JSTokenTypes.COMMENTS_AND_WHITESPACES, JSStubElementTypes.ATTRIBUTE_LISTS)
 
-    val ourPrimitiveTypeFilter = JSKeywordSets.PRIMITIVE_TYPES
+    val ourPrimitiveTypeFilter = JSKeywordSets.PRIMITIVE_TYPES!!
 
-    fun processDocumentationTextFromComment(context: PsiElement, _initialComment: ASTNode,
+    fun processDocumentationTextFromComment(context: PsiElement, comment: ASTNode,
             processor: JSDocumentationProcessor) {
-        var prev = _initialComment.treePrev
+        var prev = comment.treePrev
         if (prev != null && prev.psi is OuterLanguageElement) {
             while (prev != null && prev.psi is OuterLanguageElement) {
                 prev = prev.treePrev
@@ -456,9 +476,9 @@ object BetterTSDocumentationUtils {
             prev = null
         }
 
-        val initialComment = prev ?: _initialComment
+        val initialComment = prev ?: comment
         val eolComment = initialComment.elementType === JSTokenTypes.END_OF_LINE_COMMENT
-        val commentLineIterator: Any
+        val commentLineIterator: Enumeration<String>
         if (eolComment) {
             commentLineIterator = object : Enumeration<String> {
                 var commentNode: ASTNode? = initialComment
@@ -482,7 +502,7 @@ object BetterTSDocumentationUtils {
         } else {
             var text = initialComment.text
             text = unwrapCommentDelimiters(text)
-            commentLineIterator = StringTokenizer(text, "\r\n")
+            commentLineIterator = StringTokenizer(text, "\r\n") as Enumeration<String>
         }
 
         val needPlainCharData = processor.needsPlainCommentData()
@@ -490,8 +510,8 @@ object BetterTSDocumentationUtils {
         var tag: DocTagBuilder? = null
         val multilineCommentTag = StringBuilder()
 
-        while ((commentLineIterator as Enumeration<String>).hasMoreElements()) {
-            var s = commentLineIterator.nextElement() as String
+        while (commentLineIterator.hasMoreElements()) {
+            var s = commentLineIterator.nextElement()
             if (s.indexOf(64.toChar()) != -1 || s.indexOf(
                             58.toChar()) != -1 || needPlainCharData || tag != null && tag.continueType) {
                 if (needPlainCharData && s.contains("{@link")) {
@@ -514,6 +534,7 @@ object BetterTSDocumentationUtils {
                                 text = null
                             }
                         }
+                        // TODO: Fix here
                         if (BrowserUtil.isAbsoluteURL(linkUrl)) {
                             b2.append("<a href=\"").append(linkUrl).append("\">").append(text ?: linkUrl).append("</a>")
                         } else {
@@ -887,9 +908,9 @@ object BetterTSDocumentationUtils {
                         realElement = getElementOverAssignmentParent(realElement)
                     }
                     if (realElement is JSFieldVariable) {
-                        val _docComment = getStartingChildDocComment((realElement as PsiElement?))
-                        if (_docComment != null) {
-                            docComment = _docComment
+                        val childDocComment = getStartingChildDocComment(realElement)
+                        if (childDocComment != null) {
+                            docComment = childDocComment
                         } else {
                             val parent = (realElement as PsiElement).parent
                             if (parent !is TypeScriptObjectType) {
@@ -899,19 +920,18 @@ object BetterTSDocumentationUtils {
                     }
                     parentToSearchDocComment = getParentToSearchDocComment(realElement)
                     if (parentToSearchDocComment != null) {
-                        val _docComment = getStartingChildDocComment(parentToSearchDocComment)
-                        if (_docComment != null) {
-                            docComment = _docComment
+                        val childDocComment = getStartingChildDocComment(parentToSearchDocComment)
+                        if (childDocComment != null) {
+                            docComment = childDocComment
                         }
                     }
                     if (docComment == null) {
                         docComment = searchPreviousNonDocComment(realElement)
                     }
                     if (docComment != null) {
-                        docComment = skipOuterElements((docComment as PsiComment?)!!)
+                        docComment = skipOuterElements(docComment)
                     }
-                    if (docComment != null && isSelfSufficientComment(
-                                    (docComment as PsiComment?)!!)) {
+                    if (docComment != null && isSelfSufficientComment(docComment)) {
                         null
                     } else {
                         elementToAttach?.set(getAssociatedElement(realElement, parentToSearchDocComment))
@@ -997,7 +1017,7 @@ object BetterTSDocumentationUtils {
     }
 
     private fun skipOuterElements(comment: PsiComment): PsiComment? {
-        return null
+        return comment
     }
 
     private fun getParentToSearchDocComment(element: PsiElement): PsiElement? {
@@ -1033,7 +1053,7 @@ object BetterTSDocumentationUtils {
         return realElement
     }
 
-    private fun getAssociatedElement(element: PsiElement, parentToSearchDocComment: PsiElement?): PsiElement? {
+    private fun getAssociatedElement(element: PsiElement, parentToSearchDocComment: PsiElement?): PsiElement {
         var associatedElement = parentToSearchDocComment ?: element
         if (associatedElement is JSFunction || associatedElement is JSVarStatement || associatedElement is JSProperty || associatedElement is JSClass) {
             associatedElement = associatedElement.firstChild
@@ -1325,7 +1345,7 @@ object BetterTSDocumentationUtils {
     }
 
     fun findEnumType(anchor: PsiElement?): String? {
-        val docComment: PsiElement? = JSDocumentationUtils.findDocCommentWider(anchor)
+        val docComment: PsiElement? = findDocCommentWider(anchor)
         return if (docComment is JSDocComment) docComment.enumType else null
     }
 
@@ -1378,7 +1398,7 @@ object BetterTSDocumentationUtils {
     }
 
     fun calculateConst(element: PsiElement): Boolean {
-        val docComment = JSDocumentationUtils.findOwnDocComment(element)
+        val docComment = findOwnDocComment(element)
         return docComment != null && docComment.hasConstTag()
     }
 
@@ -1455,7 +1475,8 @@ object BetterTSDocumentationUtils {
     fun getTypeFromTrailingComment(function: JSFunction): JSType? {
         val lastCommentInFunctionBody = findTrailingCommentInFunctionBody(function)
         return if (lastCommentInFunctionBody != null) {
-            var type = tryCreateTypeFromComment(lastCommentInFunctionBody.psi!!, false, true, false)
+            var type = tryCreateTypeFromComment(lastCommentInFunctionBody.psi as PsiComment, spaceAllowed = false,
+                    allowEOLComment = true, allowCommentAfterType = false)
             if (type !is JSSpecialNamedTypeImpl) {
                 type = JSTypeUtils.copyWithStrict(type, false)
             }
@@ -1474,7 +1495,8 @@ object BetterTSDocumentationUtils {
                 reasonableNextElement = reasonableNextElement.getNextSibling()
             }
             if (reasonableNextElement is JSDocComment) {
-                type = tryCreateTypeFromComment(reasonableNextElement, false, true, false)
+                type = tryCreateTypeFromComment(reasonableNextElement, spaceAllowed = false, allowEOLComment = true,
+                        allowCommentAfterType = false)
             }
         }
 
@@ -1625,6 +1647,811 @@ object BetterTSDocumentationUtils {
         }
     }
 
+    fun getBaseKey(libUrl: String): String? {
+        val var1 = JSExternalLibraryDocBundle.getBasePatternKeys().iterator()
+
+        while (true) {
+            var baseKey: String?
+            var patterns: String?
+            do {
+                if (!var1.hasNext()) {
+                    return null
+                }
+                baseKey = var1.next()
+                patterns = JSExternalLibraryDocBundle.getPatterns(baseKey!!)
+            } while (patterns == null)
+
+            val var4 = patterns.split(";".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+            val var5 = var4.size
+            for (var6 in 0 until var5) {
+                val pattern = var4[var6]
+                val tp = pattern.trim { it <= ' ' }
+                if (tp.isNotEmpty() && libUrl.matches(tp.toRegex())) {
+                    return baseKey
+                }
+            }
+        }
+    }
+
+    fun findAssociatedElement(psiComment: PsiComment?): PsiElement? {
+        val parent = psiComment?.parent
+        var next: PsiElement? = null
+        if (parent is JSExpressionStatement) {
+            val expression = parent.expression
+            if (expression is JSAssignmentExpression) {
+                val lOperand = expression.lOperand
+                if (lOperand is JSDefinitionExpression || lOperand is JSReferenceExpression) {
+                    next = lOperand
+                }
+            } else if (expression is JSReferenceExpression) {
+                next = expression
+            }
+        } else if (parent is ES6ExportDefaultAssignment) {
+            next = parent.expression
+        } else if (parent !is JSProperty && parent !is JSFunction && parent !is JSVariable && parent !is JSClass) {
+            if (parent is JSVarStatement) {
+                val variables = parent.variables
+                if (variables.isNotEmpty()) {
+                    next = variables[0]
+                }
+            }
+        } else {
+            next = parent
+        }
+
+        return next
+    }
+
+    fun findAttachedElementFromComment(psiComment: PsiComment?): PsiElement? {
+        val strictElement = findAssociatedElement(psiComment)
+        return if (strictElement != null) {
+            strictElement
+        } else {
+            var next = psiComment?.nextSibling
+            while (next is PsiWhiteSpace || next is PsiComment || next != null && next !is JSElement) {
+                next = next.nextSibling
+            }
+            val associatedComment: PsiElement? = findDocCommentWider(next)
+            if (associatedComment != null && associatedComment !== psiComment) null else next
+        }
+    }
+
+    fun getQualifiedNameFromPsi(namedElement: PsiElement?): String? {
+        var realNamedElement = namedElement
+        if (realNamedElement is JSDefinitionExpression) {
+            realNamedElement = realNamedElement.expression
+        }
+        return if (realNamedElement is JSNamedElement && realNamedElement !is JSProperty) {
+            realNamedElement.name
+        } else {
+            if (realNamedElement is JSReferenceExpression) {
+                val name = JSSymbolUtil.getAccurateReferenceName(
+                        (realNamedElement as PsiQualifiedReference?)!!)
+                if (name != null) {
+                    return name.qualifiedName
+                }
+            }
+            null
+        }
+    }
+
+    fun isClassOrInterface(element: JSQualifiedNamedElement?): ClassOrInterface {
+        return if (element is JSParameter) {
+            ClassOrInterface.NONE
+        } else {
+            val comment = JSStubBasedPsiTreeUtil.findDocComment(element!!)
+            if (comment != null && comment.hasInterfaceTag()) {
+                ClassOrInterface.INTERFACE
+            } else if (comment != null && comment.isClassExplicitly) {
+                ClassOrInterface.CLASS
+            } else {
+                ClassOrInterface.NONE
+            }
+        }
+    }
+
+    fun findNextNamepathSeparator(namepath: String, startOffset: Int): Int {
+        val pattern = if (startOffset == 0) NAMEPATH_START_PATTERN else NAMEPATH_PART_PATTERN
+        val partMatcher = pattern.matcher(namepath.subSequence(startOffset, namepath.length))
+        return if (!partMatcher.lookingAt()) -1 else startOffset + partMatcher.end()
+    }
+
+    fun appendPrefixToName(name: String, prefix: String): String {
+        var realName = name
+        val lastPartOffset = findLastNamepathPartOffset(realName)
+        if (!realName.startsWith(prefix, lastPartOffset)) {
+            realName = StringBuilder(realName).insert(lastPartOffset, prefix).toString()
+        }
+
+        return realName
+    }
+
+    private fun findLastNamepathPartOffset(namepath: String): Int {
+        var startOffset = 0
+        var prevDot = -1
+
+        while (true) {
+            val nextDot = findNextNamepathSeparator(namepath, prevDot + 1)
+            if (nextDot - prevDot > 1) {
+                startOffset = prevDot + 1
+            }
+            if (nextDot >= namepath.length || nextDot <= prevDot) {
+                return startOffset
+            }
+            prevDot = nextDot
+        }
+    }
+
+    fun mayRelateTo(docComment: JSDocComment, element: PsiElement): Boolean {
+        val indexingData = docComment.indexingData
+        if (indexingData != null && element is JSPsiNamedElementBase) {
+            val typedefs = indexingData.typedefs
+            if (typedefs != null && typedefs.size == 1) {
+                val pair = ContainerUtil.getFirstItem(typedefs)
+                        ?: error("typedef element must not be null")
+                if (pair.first != null && pair.first != element.name) {
+                    return false
+                }
+            }
+        }
+
+        return true
+    }
+
+    fun moveJSDoc(docComment: PsiComment?, newElement: PsiElement) {
+        val existingComment = PsiTreeUtil.getChildOfType(newElement, JSDocComment::class.java)
+        if (docComment != null && (existingComment == null || docComment.text != existingComment.text)) {
+            copyJSDocComment(docComment, newElement)
+            docComment.parent.deleteChildRange(docComment, docComment)
+        }
+    }
+
+    fun copyJSDocComment(docComment: PsiComment?, newElement: PsiElement) {
+        if (docComment != null && newElement.firstChild != null) {
+            val added: PsiElement
+            if (docComment is JSDocComment
+                    && PsiTreeUtil.getChildOfType(newElement, JSDocComment::class.java) == null) {
+                added = newElement.firstChild
+                newElement.addBefore(docComment.copy(), added)
+                addNewLineBeforeIfNoNewlineNow(added)
+                addNewLineBeforeIfNoNewlineNow(newElement)
+            } else {
+                added = newElement.parent.addBefore(docComment.copy(), newElement)
+                addNewLineBeforeIfNoNewlineNow(added)
+                addNewLineBeforeIfNoNewlineNow(newElement)
+            }
+        }
+    }
+
+    private fun addNewLineBeforeIfNoNewlineNow(newElement: PsiElement) {
+        if (newElement.prevSibling !is PsiWhiteSpace || StringUtil.countNewLines(newElement.prevSibling.text) <= 0) {
+            JSChangeUtil.addWs(newElement.parent.node, newElement.node, "\n")
+        }
+    }
+
+    fun findCommentForImplicitElement(implicitElementParent: PsiElement?): PsiElement? {
+        val hasStub = implicitElementParent is StubBasedPsiElement<*> && implicitElementParent.stub != null
+        val expression = PsiTreeUtil.getNonStrictParentOfType<PsiElement>(implicitElementParent,
+                if (hasStub) JSExpression::class.java else JSStatement::class.java, JSProperty::class.java,
+                JSFunction::class.java, JSDocComment::class.java)
+        return if (expression != null) findDocComment(expression) else null
+    }
+
+    fun findOwnDocCommentForImplicitElement(implicitElementParent: PsiElement): JSDocComment? {
+        if (implicitElementParent is PsiFile) {
+            return null
+        } else {
+            val comment = findOwnDocComment(implicitElementParent)
+            return if (comment != null) {
+                comment
+            } else {
+                var elementToCheck = implicitElementParent.parent
+                if (elementToCheck is PsiFile) {
+                    null
+                } else {
+                    if (elementToCheck is JSArgumentList) {
+                        elementToCheck = elementToCheck.getParent()
+                    }
+                    if (elementToCheck is JSCallExpression) {
+                        elementToCheck = elementToCheck.getParent()
+                    }
+                    if (elementToCheck is JSExpressionStatement) getStartingChildDocComment(elementToCheck) else null
+                }
+            }
+        }
+    }
+
+    fun getDocTag(context: PsiElement, commentText: String?): DocTag? {
+        val lines = StringUtil.split(commentText!!, "\n")
+        var tag: DocTagBuilder? = null
+        val multilineCommentTag = StringBuilder()
+
+        var commentLine: String
+        val var5 = lines.iterator()
+        while (var5.hasNext()) {
+            val line = var5.next() as String
+            commentLine = prepareCommentLine(line)
+            tag = handlePossiblyMultilinedTag(context, tag, multilineCommentTag, commentLine, null, null, false)
+        }
+
+        return tag?.toDocTag()
+    }
+
+    private fun handleCommentLine(context: PsiElement, commentText: String, lastParameterName: String?,
+            processor: JSDocumentationProcessor?,
+            patternToMetaDocTypeMap: Map<Pattern, MetaDocType>): DocTagBuilder? {
+        var realLastParameterName = lastParameterName
+        val var5 = patternToHintMap.entries.iterator()
+
+        while (var5.hasNext()) {
+            val (key, value) = var5.next()
+            val pattern = key as Pattern
+            var matcher = if (commentText.contains((value as CharSequence))) pattern.matcher(commentText) else null
+            if (matcher != null && matcher.matches()) {
+                val docType = patternToMetaDocTypeMap[pattern]
+                if (docType != null) {
+                    val docTag = DocTagBuilder(docType)
+                    docTag.breakEnd = false
+                    val groupCount = matcher.groupCount()
+                    var remainingLineContent = if (groupCount > 0) matcher.group(groupCount) else null
+                    var matchName = if (groupCount > 1) matcher.group(1) else null
+                    var matchValue = if (groupCount > 2) matcher.group(2) else null
+                    var isParameterProperty = false
+                    var isOptional = false
+                    var hasDefaultValue = false
+                    var groupForInitialValue = -1
+                    var fieldName: String? = null
+                    var matched: String
+                    val newRemainingLineContent: String
+                    if (pattern == ourJSDocParametersPattern) {
+                        matched = matcher.group(1)
+                        var tailMatcher: Matcher
+                        var typeLength: Int
+                        if (ourYuiDocParametersPattern.matcher(matched).also { tailMatcher = it }.matches()) {
+                            newRemainingLineContent = tailMatcher.group(2)
+                            typeLength = getTypeStringLength(context, newRemainingLineContent)
+                            if (typeLength > newRemainingLineContent.length) {
+                                docTag.continueType = true
+                                docTag.matchName = tailMatcher.group(1)
+                                docTag.matchValue = newRemainingLineContent
+                                return docTag
+                            }
+                            matchName = tailMatcher.group(1)
+                            matchValue = trimBrackets(newRemainingLineContent.substring(0, typeLength))
+                            remainingLineContent = newRemainingLineContent.substring(typeLength)
+                        } else {
+                            val hasType = matched.trim { it <= ' ' }.startsWith("{")
+                            typeLength = 0
+                            if (hasType) {
+                                typeLength = getTypeStringLength(context, matched)
+                                if (typeLength > matched.length) {
+                                    docTag.continueType = true
+                                    docTag.matchValue = matched
+                                    return docTag
+                                }
+                                matchValue = trimBrackets(matched.substring(0, typeLength))
+                            } else {
+                                matchValue = null
+                            }
+                            if (ourJSDocParametersRestPattern.matcher(matched.substring(typeLength))
+                                            .also { matcher = it }.matches()) {
+                                matchName = matcher!!.group(2)
+                                remainingLineContent = matcher!!.group(7)!!
+                                val typeAfterParamName = matcher!!.group(6)
+                                if (typeAfterParamName != null) {
+                                    matchValue = typeAfterParamName
+                                } else {
+                                    isParameterProperty = matcher!!.group(3).also { fieldName = it } != null
+                                    groupForInitialValue = 5
+                                    hasDefaultValue = matcher!!.group(5) != null
+                                    val matchTypeDecorated = matcher!!.group(1)
+                                    isOptional = matchTypeDecorated != null && (matchTypeDecorated.startsWith(
+                                            "[") || matchTypeDecorated.startsWith("("))
+                                }
+                                if (matcher!!.group(4) != null) {
+                                    if (matchValue == null) {
+                                        matchValue = "*"
+                                    }
+                                    matchValue = "...$matchValue"
+                                }
+                            }
+                        }
+                        realLastParameterName = matchName
+                    } else if (pattern != ourJSDocPropertyPattern && pattern != ourJSDocConfigPattern) {
+                        if ((JSDocumentationProcessor.TYPE_AS_VALUE_TAGS.contains(
+                                        docType) || JSDocumentationProcessor.NAMEPATH_AS_NAME_TAGS.contains(
+                                        docType)) && pattern != ourDojoParametersPattern && pattern != ourJSDocFinalPattern) {
+                            if (remainingLineContent != null &&
+                                    ((pattern != ourJSDocThrowsPattern && !isTypeAndNamePattern(pattern)) ||
+                                            startsWithTypeInBraces(remainingLineContent))) {
+                                val typeLength = getTypeStringLength(context, remainingLineContent)
+                                if (typeLength > remainingLineContent.length) {
+                                    docTag.continueType = true
+                                    docTag.matchValue = trimBrackets(remainingLineContent)
+                                    return docTag
+                                }
+                                val typeOrNamepath = trimBrackets(remainingLineContent.substring(0, typeLength))
+                                newRemainingLineContent = remainingLineContent.substring(typeLength).trim { it <= ' ' }
+                                if (startsWithTypeInBraces(remainingLineContent) || newRemainingLineContent.isEmpty()) {
+                                    remainingLineContent = newRemainingLineContent
+                                    if (JSDocumentationProcessor.TYPE_AS_VALUE_TAGS.contains(docType)) {
+                                        matchName = null
+                                        matchValue = typeOrNamepath
+                                    } else {
+                                        matchName = typeOrNamepath
+                                        matchValue = null
+                                    }
+                                }
+                            }
+                            if (pattern == ourJSDocTemplatePattern) {
+                                if (StringUtil.isNotEmpty(remainingLineContent!!)) {
+                                    matcher = ourJSDocTemplateNamesPattern.matcher(remainingLineContent)
+                                    if (matcher!!.matches() && matcher!!.group(1) != null) {
+                                        matchName = matcher!!.group(1)
+                                        remainingLineContent = matcher!!.group(2)
+                                    }
+                                }
+                            } else if (isTypeAndNamePattern(pattern)) {
+                                if (StringUtil.isNotEmpty(remainingLineContent!!)) {
+                                    matcher = ourJSDocNameTailPattern.matcher(remainingLineContent)
+                                    if (matcher!!.matches() && matcher!!.group(1) != null) {
+                                        matchName = matcher!!.group(1)
+                                        remainingLineContent = matcher!!.group(2)
+                                    }
+                                }
+                            } else if (groupCount != 1) {
+                                Logger.getInstance(BetterTSDocumentationUtils::class.java)
+                                        .error(pattern.pattern() + " expected to have one group having type and comment")
+                            }
+                        }
+                    } else {
+                        if (matcher!!.start(1) != -1) {
+                            matched = commentText.substring(matcher!!.start(1))
+                            val typeLength = getTypeStringLength(context, matched)
+                            if (typeLength > matched.length) {
+                                docTag.continueType = true
+                                docTag.matchValue = matched
+                                return docTag
+                            }
+                            matchValue = trimBrackets(matched.substring(0, typeLength))
+                            remainingLineContent = matched.substring(typeLength)
+                        } else {
+                            matchValue = null
+                            remainingLineContent = matcher!!.group(2)
+                        }
+                        matcher = ourJSDocPropertyRestPattern.matcher(remainingLineContent!!)
+                        if (matcher!!.matches()) {
+                            isOptional = !StringUtil.isEmpty(matcher!!.group(1))
+                            matchName = matcher!!.group(2)
+                            remainingLineContent = StringUtil.trim(matcher!!.group(4))
+                            if (pattern == ourJSDocConfigPattern) {
+                                fieldName = matchName
+                                if (matchName != null) {
+                                    isOptional = true
+                                    isParameterProperty = true
+                                    groupForInitialValue = 3
+                                    hasDefaultValue = matcher!!.group(3) != null
+                                }
+                                matchName = realLastParameterName
+                            }
+                        }
+                    }
+                    if (remainingLineContent != null && remainingLineContent.trim { it <= ' ' }
+                                    .startsWith("-") && JSStringUtil.parseNumericValue(
+                                    remainingLineContent.trim { it <= ' ' }) == null) {
+                        remainingLineContent = remainingLineContent.trim { it <= ' ' }.substring(1).trim { it <= ' ' }
+                    }
+                    matched = pattern.pattern()
+                    docTag.matchName = matchName!!
+                    docTag.matchValue = matchValue
+                    docTag.lastParameterName = realLastParameterName
+                    if (isParameterProperty) {
+                        docTag.matchName = createParameterOrParameterFieldReference(matchName, fieldName)
+                        docTag.type = MetaDocType.PARAMETER_PROPERTY
+                    }
+                    if (processor != null) {
+                        if (isParameterProperty) {
+                            if (!processor.onPatternMatch(MetaDocType.PARAMETER_PROPERTY,
+                                            createParameterOrParameterFieldReference(matchName, fieldName), matchValue,
+                                            remainingLineContent, commentText, matched)) {
+                                return docTag
+                            }
+                        } else if (!processor.onPatternMatch(docType, matchName, matchValue, remainingLineContent,
+                                        commentText, matched)) {
+                            docTag.breakEnd = true
+                        }
+                        if (isOptional && !processor.onPatternMatch(MetaDocType.PREVIOUS_IS_OPTIONAL,
+                                        createParameterOrParameterFieldReference(matchName, fieldName), null, null,
+                                        commentText, matched)) {
+                            return docTag
+                        }
+                        if (hasDefaultValue) {
+                            processor.onPatternMatch(MetaDocType.PREVIOUS_IS_DEFAULT,
+                                    createParameterOrParameterFieldReference(matchName, fieldName), null,
+                                    matcher!!.group(groupForInitialValue), commentText, matched)
+                        }
+                    }
+                    return docTag
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun startsWithTypeInBraces(string: String): Boolean {
+        return string.trim { it <= ' ' }.startsWith("{")
+    }
+
+    private fun isTypeAndNamePattern(pattern: Pattern): Boolean {
+        return pattern == ourJSDocTypedefPattern || pattern == ourJSDocMemberPattern || pattern == ourJSDocVarPattern ||
+                pattern == ourJSDocConstantPattern || pattern == ourJSDocTemplatePattern
+    }
+
+    fun getJsMdnDocumentation(element: PsiElement?, context: PsiElement?): MdnSymbolDocumentation? {
+        var realContext = context
+        return if (element != null && isFromCoreLibFile(element)) {
+            val candidates: MutableList<PsiElement?> = SmartList()
+            if (element is TypeScriptCompileTimeType) {
+                val parent = JSResolveUtil.findParent(element)
+                val name = element.name
+                if (name != null && parent != null) {
+                    val all = JSStubBasedPsiTreeUtil.resolveLocallyWithMergedResults(name, parent)
+                    val var10000 = all.stream().filter { el -> el !is TypeScriptCompileTimeType }.findAny()
+                    Objects.requireNonNull<List<PsiElement?>>(candidates)
+                    var10000.ifPresent(candidates::add)
+                    if (candidates.isEmpty()) {
+                        candidates.add(element)
+                    }
+                }
+            } else if (element is TypeScriptCallSignature) {
+                candidates.add(ObjectUtils.doIfNotNull(element.getContext()) { obj -> obj.context })
+            } else if (element !is JSReferenceExpression) {
+                candidates.add(element)
+            }
+            val var13 = candidates.iterator()
+            while (var13.hasNext()) {
+                val candidate = var13.next()
+                if (candidate is JSQualifiedNamedElement && !DumbService.isDumb(candidate.getProject())) {
+                    var qName = candidate.qualifiedName
+                    if (!StringUtil.isEmpty(qName)) {
+                        val libFile = candidate.getContainingFile().virtualFile
+                        if (libFile != null) {
+                            val namespace: MdnApiNamespace
+                            if (JSCorePredefinedLibrariesProvider.isWebLibraryFileName(libFile.name)) {
+                                namespace = MdnApiNamespace.WebApi
+                                if (!qName!!.contains(".")) {
+                                    val targets = JSClassResolver.getInstance().findElementsByNameIncludingImplicit(
+                                            qName, GlobalSearchScope.fileScope(element.project, libFile))
+                                    var exactName: String? = null
+                                    val var10: Iterator<*> = targets.iterator()
+                                    while (var10.hasNext()) {
+                                        val target = var10.next() as JSPsiElementBase
+                                        val elementQName = target.qualifiedName
+                                        if (elementQName != null && elementQName != qName) {
+                                            if (exactName != null && exactName != elementQName) {
+                                                exactName = null
+                                                break
+                                            }
+                                            exactName = elementQName
+                                        }
+                                    }
+                                    if (exactName != null) {
+                                        qName = exactName
+                                    }
+                                }
+                            } else {
+                                val domLibFiles = getDomLibraries(element.project)
+                                val elements = JSClassResolver.getInstance().findElementsByQNameIncludingImplicit(
+                                        qName!!, GlobalSearchScope.filesScope(element.project, domLibFiles))
+                                namespace = if (!elements.isEmpty()) {
+                                    MdnApiNamespace.WebApi
+                                } else {
+                                    MdnApiNamespace.GlobalObjects
+                                }
+                            }
+                            var constructorDocumentation: MdnSymbolDocumentation?
+                            if (!qName.contains(".") && realContext != null) {
+                                constructorDocumentation = getJsMdnDocumentation(namespace, "$qName.$qName")
+                                if (constructorDocumentation == null && namespace == MdnApiNamespace.WebApi) {
+                                    constructorDocumentation = getJsMdnDocumentation(MdnApiNamespace.GlobalObjects,
+                                            "$qName.$qName")
+                                }
+                                if (constructorDocumentation != null) {
+                                    val containingFile = realContext.containingFile
+                                    if (containingFile != null && realContext is PsiWhiteSpace) {
+                                        realContext =
+                                                containingFile.findElementAt(realContext.getTextRange().startOffset - 1)
+                                    }
+                                    if (PsiTreeUtil.getContextOfType(realContext, false, JSNewExpression::class.java,
+                                                    JSStatement::class.java,
+                                                    JSParameterList::class.java) is JSNewExpression) {
+                                        return constructorDocumentation
+                                    }
+                                }
+                            }
+                            constructorDocumentation = getJsMdnDocumentation(namespace, qName)
+                            if (constructorDocumentation == null && namespace == MdnApiNamespace.WebApi) {
+                                constructorDocumentation = getJsMdnDocumentation(MdnApiNamespace.GlobalObjects, qName)
+                            }
+                            return constructorDocumentation
+                        }
+                    }
+                }
+            }
+            null
+        } else {
+            null
+        }
+    }
+
+    private fun getDomLibraries(project: Project): List<VirtualFile> {
+        val service = TypeScriptLibraryProvider.getService(project)
+        val libraries = service.allBundledLibraries
+        return ContainerUtil.filter(libraries) { el -> JSCorePredefinedLibrariesProvider.isWebLibraryFileName(el.name) }
+    }
+
+    fun isFromCoreLibFile(original: PsiElement): Boolean {
+        val originalFile = ObjectUtils.doIfNotNull(original.containingFile) { obj: PsiFile -> obj.virtualFile }
+        return TypeScriptLibraryProvider.isLibraryOrBundledLibraryFile(original.project, originalFile) ||
+                JSCorePredefinedLibrariesProvider.isCoreLibraryFile(originalFile)
+    }
+
+    fun checkDocCommentMatchesFunctionSignature(docComment: JSDocComment,
+            function: JSFunction): JSDocParametersMappingToFunctionInfo? {
+        val parameters = function.parameterVariables
+        val actualParameters: MutableMap<String, Int> = HashMap(parameters.size)
+
+        for (i in parameters.indices) {
+            actualParameters[parameters[i].name!!] = i
+        }
+
+        val matchingTagIndexes: MutableMap<String, Int> = HashMap()
+        val tagNames: MutableMap<Int, String> = HashMap()
+        val tagsToParameters = getTagToParameterMap(docComment, function, tagNames)
+        val var7 = Int2ObjectMaps.fastIterable(tagsToParameters.matchedTags).iterator()
+
+        while (var7.hasNext()) {
+            val entry = var7.next()
+            val paramElement = entry.value
+            if (paramElement is JSParameter) {
+                matchingTagIndexes[paramElement.name!!] = entry.intKey
+            }
+        }
+
+        val paramsToRemove: MutableMap<Int, String> = HashMap()
+        val var21 = tagsToParameters.nonMatchedTags.keys.iterator()
+
+        while (var21.hasNext()) {
+            val nonMatchedTag = var21.next()
+            paramsToRemove[nonMatchedTag] = tagNames[nonMatchedTag]!!
+        }
+
+        if (paramsToRemove.isNotEmpty()) {
+            val iterator = paramsToRemove.values.iterator()
+            while (iterator.hasNext()) {
+                if ("arguments" == iterator.next()) {
+                    iterator.remove()
+                    break
+                }
+            }
+        }
+
+        var parametersToAdd: List<Pair<Int, String>> = emptyList()
+        if (matchingTagIndexes.size < actualParameters.size) {
+            parametersToAdd = ArrayList()
+            val var10 = parameters.size
+            for (var11 in 0 until var10) {
+                val parameter = parameters[var11]
+                val parameterName = parameter.name!!
+                if (matchingTagIndexes[parameterName] == null) {
+                    if (JSDestructuringUtil.isDestructuring(parameter.parent)) {
+                        Objects.requireNonNull(JSDestructuringParameter::class.java)
+                        val context = JSDestructuringContext.findDestructuringParents(parameter) { obj ->
+                            JSDestructuringParameter::class.java.isInstance(obj)
+                        }
+                        if (context.outerElement != null && tagsToParameters.matchedTags.containsValue(
+                                        context.outerElement)) {
+                            continue
+                        }
+                    }
+                    var insertionPlace = -1
+                    val insertedParameterIndex = actualParameters[parameterName] as Int
+                    val var17 = matchingTagIndexes.entries.iterator()
+                    while (var17.hasNext()) {
+                        val (key, value) = var17.next()
+                        if (insertedParameterIndex < actualParameters[key]!!) {
+                            insertionPlace = if (insertionPlace == -1) value else min(insertionPlace, value)
+                        } else if (insertedParameterIndex > actualParameters[key]!!) {
+                            insertionPlace = max(insertionPlace, value + 1)
+                        }
+                    }
+                    parametersToAdd.add(
+                            Pair.create(if (insertionPlace == -1) Int.MAX_VALUE else insertionPlace, parameterName))
+                }
+            }
+        }
+
+        return if (parametersToAdd.isEmpty() && paramsToRemove.isEmpty()) {
+            null
+        } else {
+            val hasParamTag = !tagsToParameters.isEmpty()
+            JSDocParametersMappingToFunctionInfo(parametersToAdd, paramsToRemove, hasParamTag)
+        }
+    }
+
+    fun getTagToParameterMap(docComment: JSDocComment, function: JSFunction,
+            outTagNames: MutableMap<Int, String>?): JSTagToParameterMap {
+        val parameters = function.parameterVariables
+        val actualParameters: MutableMap<String, JSParameter> = HashMap(parameters.size)
+        val var6 = parameters.size
+
+        for (var7 in 0 until var6) {
+            val parameter = parameters[var7]
+            actualParameters[parameter.name!!] = parameter
+        }
+
+        val tags = docComment.tags
+        val matchedTags: Int2ObjectMap<JSParameterListElement> = Int2ObjectOpenHashMap()
+        val unmatchedTags: Int2ObjectMap<JSDocTag> = Int2ObjectOpenHashMap()
+        var restIndex = -1
+        val dummyNameToDestructuringParameter: MutableMap<String, JSDestructuringParameter> = HashMap()
+        val parameterElements = function.parameters
+        var destructuringParameterElement = 0
+
+        for (i in tags.indices) {
+            val tag = tags[i]
+            val docTag = getDocTag(tag, tag.text)
+            if (docTag != null) {
+                if (docTag.type == MetaDocType.PARAMETER) {
+                    outTagNames?.put(i, docTag.matchName)
+                    if (actualParameters.containsKey(docTag.matchName)) {
+                        val jsParameter = actualParameters[docTag.matchName]!!
+                        matchedTags.put(i, jsParameter)
+                        val destructuringParameter = getOuterParameterForRestPropertyParameter(jsParameter)
+                        if (destructuringParameter != null) {
+                            dummyNameToDestructuringParameter[docTag.matchName] = destructuringParameter
+                        }
+                    } else {
+                        var rest = false
+                        if (docTag.matchValue != null) {
+                            val parameterType = JSTypeParser(docComment.project, docTag.matchValue,
+                                    JSTypeSource.EMPTY).parseParameterType()
+                            rest = parameterType != null && parameterType.isRest
+                        }
+                        if (rest) {
+                            restIndex = i
+                        } else {
+                            var isDestructuring = false
+                            while (destructuringParameterElement < parameterElements.size) {
+                                if (parameterElements[destructuringParameterElement] is JSDestructuringParameter) {
+                                    if (!dummyNameToDestructuringParameter.containsKey(docTag.matchName)) {
+                                        dummyNameToDestructuringParameter[docTag.matchName] =
+                                                parameterElements[destructuringParameterElement] as JSDestructuringParameter
+                                        matchedTags.put(i, parameterElements[destructuringParameterElement])
+                                        isDestructuring = true
+                                        ++destructuringParameterElement
+                                        break
+                                    }
+                                    ++destructuringParameterElement
+                                } else {
+                                    ++destructuringParameterElement
+                                }
+                            }
+                            if (!isDestructuring) {
+                                unmatchedTags.put(i, tags[i])
+                            }
+                        }
+                    }
+                } else if (docTag.type == MetaDocType.PARAMETER_PROPERTY) {
+                    val qName = JSQualifiedNameImpl.fromQualifiedName(docTag.matchName).toComponents()
+                    val outerName = ContainerUtil.getFirstItem(qName) as String
+                    val destructuringParameter = dummyNameToDestructuringParameter.getOrDefault(outerName, null)
+                    if (destructuringParameter != null) {
+                        var target: PsiElement? = destructuringParameter.target
+                        var componentIndex = 1
+                        while (componentIndex < qName.size) {
+                            if (target is JSDestructuringObject) {
+                                val property = target.findProperty(qName[componentIndex]!!)
+                                if (property != null) {
+                                    target = property.destructuringElement
+                                    ++componentIndex
+                                    continue
+                                }
+                            }
+                            target = null
+                            break
+                        }
+                        if (target is JSParameter) {
+                            matchedTags.put(i, target as JSParameter?)
+                        }
+                    }
+                }
+            }
+        }
+
+        return JSTagToParameterMap(matchedTags, unmatchedTags, restIndex)
+    }
+
+    private fun getOuterParameterForRestPropertyParameter(parameter: JSParameter): JSDestructuringParameter? {
+        val parent = parameter.parent
+        if (parent is JSDestructuringProperty && parent.isRest) {
+            val grandParent = parent.getParent()
+            if (grandParent is JSDestructuringObject) {
+                val destructuringParameter = grandParent.getParent()
+                if (destructuringParameter is JSDestructuringParameter) {
+                    return destructuringParameter
+                }
+            }
+        }
+
+        return null
+    }
+
+    fun findJSContext(element: PsiElement): JSContext {
+        val comment = findDocComment(element)
+        return if (comment is JSDocComment) comment.jsContext else JSContext.UNKNOWN
+    }
+
+    fun isExtendedTypeName(type: CharSequence): Boolean {
+        return ourJSDocExtendedTypeNamePattern.matcher(type).matches()
+    }
+
+    fun getParameterNameRanges(paramTag: JSDocTag): List<TextRange> {
+        val data = paramTag.docCommentData
+        if (data == null) {
+            return emptyList()
+        } else {
+            val matcher = ourJSDocParametersRestPattern.matcher(data.text)
+            if (matcher.matches() && matcher.groupCount() >= 2) {
+                val offsetInParent = data.startOffsetInParent
+                val start = matcher.start(2)
+                val end = matcher.end(2)
+                val result: MutableList<TextRange> = SmartList()
+                if (start >= 0 && end >= 0 && end > start) {
+                    result.add(TextRange.create(start, end).shiftRight(offsetInParent))
+                }
+
+                val tailStart = matcher.start(3)
+                if (tailStart != -1) {
+                    val tail = matcher.group(3)
+                    var indexOfDot: Int
+                    var currentStart = 0
+                    while (currentStart < tail.length) {
+                        indexOfDot = tail.indexOf(46.toChar(), currentStart)
+                        if (indexOfDot == -1) {
+                            indexOfDot = tail.length
+                        }
+                        if (currentStart < indexOfDot) {
+                            result.add(
+                                    TextRange.create(currentStart, indexOfDot).shiftRight(offsetInParent + tailStart))
+                        }
+                        currentStart = indexOfDot + 1
+                    }
+                }
+
+                return result
+            } else {
+                return emptyList()
+            }
+        }
+    }
+
+    fun getNamespaceFromJSDoc(element: JSNamedElement): JSNamespace? {
+        if (DialectDetector.isJavaScript(element)) {
+            val docComment = findDocComment(element)
+            if (docComment is JSDocComment) {
+                if (docComment.explicitName != null || docComment.isNamespaceExplicitlyDeclared) {
+                    return JSNamedTypeFactory.createNamespace(docComment.namespace,
+                            JSTypeSourceFactory.createTypeSource(docComment, true),
+                            JSTypeContext.fromJSContext(docComment.jsContext), false)
+                }
+            }
+        }
+
+        return null
+    }
+
     private class DocTagBuilder(var type: MetaDocType) {
 
         var matchName: String? = null
@@ -1643,22 +2470,25 @@ object BetterTSDocumentationUtils {
 
     }
 
-    class DocTag(val type: MetaDocType, val matchName: String, val matchValue: String)
+    class DocTag(val type: MetaDocType, val matchName: String, val matchValue: String?)
 
     class JSTagToParameterMap(private val myMatchedTags: Int2ObjectMap<JSParameterListElement>,
             private val myNonMatchedTags: Int2ObjectMap<JSDocTag>, private val myRestDocTagIndex: Int) {
 
-        fun getMatchedTags(): Int2ObjectMap<JSParameterListElement> {
-            return myMatchedTags
-        }
+        val matchedTags: Int2ObjectMap<JSParameterListElement>
+            get() {
+                return myMatchedTags
+            }
 
-        fun getNonMatchedTags(): Int2ObjectMap<JSDocTag> {
-            return myNonMatchedTags
-        }
+        val nonMatchedTags: Int2ObjectMap<JSDocTag>
+            get() {
+                return myNonMatchedTags
+            }
 
-        fun getRestDocTagIndex(): Int {
-            return myRestDocTagIndex
-        }
+        val restDocTagIndex: Int
+            get() {
+                return myRestDocTagIndex
+            }
 
         fun getTagForParameter(parameter: JSParameterListElement): Int {
             val var2 = Int2ObjectMaps.fastIterable(

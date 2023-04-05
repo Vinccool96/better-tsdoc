@@ -4,7 +4,6 @@ import com.intellij.lang.javascript.DialectDetector
 import com.intellij.lang.javascript.actions.JSShowTypeInfoAction
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor
 import com.intellij.lang.javascript.documentation.JSDocumentationProcessor.MetaDocType
-import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.ecmascript6.TypeScriptSignatureChooser
 import com.intellij.lang.javascript.formatter.JSCodeStyleSettings
 import com.intellij.lang.javascript.index.JSSymbolUtil
@@ -373,7 +372,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                                         val elementMatchesParameter = function == null && matchName != null
                                                 && myElement is JSImplicitElement && matchName == myElement.name
                                         addReturnTypeInfoFromComments =
-                                                patternMatched == JSDocumentationUtils.ourDojoParametersPattern
+                                                patternMatched == BetterTSDocumentationUtils.ourDojoParametersPattern
                                                         .pattern() && (function == null || matchName == null
                                                         || !ContainerUtil.exists(function.parameterVariables) {
                                                     matchName == it.name
@@ -434,7 +433,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
     private fun isNestedDocType(metaDocType: MetaDocType, patternMatched: String): Boolean {
         return metaDocType == MetaDocType.PREVIOUS_IS_OPTIONAL || metaDocType == MetaDocType.PREVIOUS_IS_DEFAULT ||
                 (metaDocType == MetaDocType.PARAMETER &&
-                        patternMatched != JSDocumentationUtils.ourDojoParametersPattern.pattern())
+                        patternMatched != BetterTSDocumentationUtils.ourDojoParametersPattern.pattern())
     }
 
     override fun postProcess() {
@@ -455,11 +454,11 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
                         } else {
                             if (function !== myElement) {
                                 val e =
-                                        JSDocumentationUtils.findDocComment(function.navigationElement)
+                                        BetterTSDocumentationUtils.findDocComment(function.navigationElement)
                                 if (e != null) {
                                     val builder =
                                             BetterTSDocumentationBuilder(function, function, myProvider)
-                                    JSDocumentationUtils.processDocumentationTextFromComment(e, e.node, builder)
+                                    BetterTSDocumentationUtils.processDocumentationTextFromComment(e, e.node, builder)
                                     val superMethodInfo = builder.myTargetInfo
                                     methodInfo.mergeDescriptionWith(superMethodInfo)
                                     methodInfo.mergeSignatureWith(this.function, function, superMethodInfo)
@@ -498,10 +497,10 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
             val var7 = members.iterator()
             while (var7.hasNext()) {
                 val member = var7.next()
-                val e = JSDocumentationUtils.findDocComment(member)
+                val e = BetterTSDocumentationUtils.findDocComment(member)
                 if (e != null) {
                     val builder = BetterTSDocumentationBuilder(member, member, myProvider)
-                    JSDocumentationUtils.processDocumentationTextFromComment(e, e.node, builder)
+                    BetterTSDocumentationUtils.processDocumentationTextFromComment(e, e.node, builder)
                     myTargetInfo.mergeDescriptionWith(builder.myTargetInfo)
                 }
             }
@@ -721,7 +720,7 @@ class BetterTSDocumentationBuilder(private val myElement: PsiElement, private va
         private fun findFunction(element: PsiElement, contextElement: PsiElement?): JSFunctionItem? {
             var result = TypeScriptSignatureChooser.resolveAnyFunction(element, contextElement)
             if (result == null) {
-                val comment = JSDocumentationUtils.findOwnDocComment(element)
+                val comment = BetterTSDocumentationUtils.findOwnDocComment(element)
                 if (comment is JSDocCommentImpl) {
                     var name = comment.explicitName
                     if (name == null && element is PsiNamedElement) {

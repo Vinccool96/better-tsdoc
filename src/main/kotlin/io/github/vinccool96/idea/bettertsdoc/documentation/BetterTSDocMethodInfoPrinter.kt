@@ -44,7 +44,7 @@ class BetterTSDocMethodInfoPrinter(builder: BetterTSDocMethodInfoBuilder, privat
                     val count = signatures.size - results.size
                     val overloadsText = JavaScriptBundle.message(
                             if (count == 1) "js.documentation.more.overload" else "js.documentation.more.overloads",
-                            *arrayOf<Any>(count))
+                            count)
                     result.append(", <br> ").append(overloadsText)
                 }
                 result.append("</div>")

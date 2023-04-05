@@ -1,7 +1,6 @@
 package io.github.vinccool96.idea.bettertsdoc.documentation
 
 import com.intellij.lang.javascript.DialectDetector
-import com.intellij.lang.javascript.documentation.JSDocumentationUtils
 import com.intellij.lang.javascript.index.JSItemPresentation
 import com.intellij.lang.javascript.psi.*
 import com.intellij.lang.javascript.psi.JSType.TypeTextFormat
@@ -64,7 +63,7 @@ open class BetterTSDocSimpleInfoPrinter<T : BetterTSDocBuilderSimpleInfo>(builde
     }
 
     private fun appendMdnDoc(result: StringBuilder, hasDefinition: Boolean): Boolean {
-        val documentation = JSDocumentationUtils.getJsMdnDocumentation(myElement, contextElement)
+        val documentation = BetterTSDocumentationUtils.getJsMdnDocumentation(myElement, contextElement)
         return if (documentation == null) {
             false
         } else {
