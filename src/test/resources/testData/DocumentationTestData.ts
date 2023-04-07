@@ -1,4 +1,10 @@
 /**
+ * A normal method
+ */
+function bar() {
+}
+
+/**
  * The `foo` method without arguments
  * {@link foo:0}
  * {@link foo:function}
@@ -19,6 +25,7 @@ function foo(): void;
 function foo(n: number): number;
 /**
  * The `foo` method with a string argument
+ * {@link bar}
  * {@link foo:2}
  * {@link foo:function(2)}
  * {@link foo:(2)}
