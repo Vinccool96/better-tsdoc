@@ -4,7 +4,6 @@ import com.intellij.codeInsight.documentation.DocumentationManagerUtil
 import com.intellij.documentation.mdn.MdnApiNamespace
 import com.intellij.documentation.mdn.MdnSymbolDocumentation
 import com.intellij.documentation.mdn.getJsMdnDocumentation
-import com.intellij.ide.BrowserUtil
 import com.intellij.lang.ASTNode
 import com.intellij.lang.ecmascript6.psi.ES6ExportDefaultAssignment
 import com.intellij.lang.ecmascript6.psi.JSExportAssignment
@@ -205,6 +204,9 @@ object BetterTSDocumentationUtils {
     private val ourJSDocExceptionPattern = Pattern.compile("^\\s*@exception\\s*(?:\\s*-\\s*)?(.*)$")
 
     private val ourJSDocLinkPattern = Pattern.compile("(\\[[^\\]]+\\])?\\{@link(?:code|plain)?\\s+([^\\}]+)\\}")
+
+    private val ourJSDocUrlPattern = Pattern.compile(
+            "^https?:\\/\\/(?:www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b(?:[-a-zA-Z0-9()@:%_\\+.~#?&\\/=]*)$")
 
     private val ourJSDocBrowserPattern = Pattern.compile("^\\s*@browser\\s+(.*)$")
 
@@ -535,12 +537,11 @@ object BetterTSDocumentationUtils {
                                 text = null
                             }
                         }
-                        // TODO: Fix here
-                        if (BrowserUtil.isAbsoluteURL(linkUrl)) {
+                        if (ourJSDocUrlPattern.matcher(linkUrl).matches()) {
                             b2.append("<a href=\"").append(linkUrl).append("\">").append(text ?: linkUrl).append("</a>")
                         } else {
                             appendHyperLinkToElement(null, linkUrl, b2, if (StringUtil.isEmpty(text)) linkUrl else text,
-                                    true, true, 0)
+                                    addElementName = true, addFilename = true, elementId = 0)
                         }
                         b.append(s, lastEnd, m.start())
                         lastEnd = m.end()
